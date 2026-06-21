@@ -89,6 +89,10 @@ async def run_sherlock(
                     await progress_callback("sherlock", "running", found_count, 400)
 
         await proc.wait()
+        if proc.returncode != 0:
+            stderr_bytes = await proc.stderr.read()
+            stderr_str = stderr_bytes.decode("utf-8", errors="replace").strip()
+            logger.error(f"Sherlock exited with code {proc.returncode}. Stderr: {stderr_str}")
 
         # Parse JSON output file
         if os.path.exists(output_file):
@@ -148,12 +152,13 @@ def _find_sherlock_command() -> Optional[List[str]]:
     # 1. Direct command
     for cmd in ["sherlock", "python -m sherlock"]:
         try:
+            full_cmd = cmd.split() + ["--version"]
             result = subprocess.run(
-                [cmd.split()[0], "--version"],
+                full_cmd,
                 capture_output=True,
                 timeout=5,
             )
-            if result.returncode == 0:
+            if result.returncode in (0, 1):
                 return cmd.split()
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
