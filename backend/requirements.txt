@@ -13,14 +13,14 @@ python-multipart==0.0.12
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 itsdangerous==2.2.0
-lxml==4.9.1
+lxml>=4.9.3
 phonenumbers==8.13.46
 # OSINT Tools
 pycountry
 socid-extractor
 jinja2
 mistletoe
-aiohttp==3.8.1
+aiohttp>=3.9.0
 aiohttp-socks==0.7.1
 aiodns==3.0.0
 arabic-reshaper==2.1.4
