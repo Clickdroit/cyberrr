@@ -33,6 +33,7 @@ async def run_sherlock(
     scan_id: str,
     existing_urls: Optional[Set[str]] = None,
     progress_callback=None,
+    proxy_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Run Sherlock via subprocess and parse results.
@@ -65,6 +66,8 @@ async def run_sherlock(
             "--timeout", "10",
             "--print-found",
         ]
+        if proxy_url:
+            cmd.extend(["--proxy", proxy_url])
 
         logger.info(f"Running Sherlock: {' '.join(cmd)}")
 
@@ -74,6 +77,7 @@ async def run_sherlock(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+
 
         found_count = 0
         # Stream stdout to track progress in real time

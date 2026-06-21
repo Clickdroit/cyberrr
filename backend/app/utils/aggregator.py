@@ -5,8 +5,17 @@ firstnames, lastnames, locations, emails, phone numbers, bio keywords.
 Uses regex + a curated name/city list for lightweight NER without heavy ML.
 """
 import re
+from datetime import datetime
 from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional, Tuple
+
+# Try to load spaCy model
+try:
+    import spacy
+    nlp = spacy.load("en_core_web_sm")
+    SPACY_AVAILABLE = True
+except Exception:
+    SPACY_AVAILABLE = False
 
 # ── Static datasets ───────────────────────────────────────────────────────────
 
@@ -106,23 +115,37 @@ def categorize_site(site_name: str, url: str) -> str:
 def extract_text_entities(text: str) -> Dict[str, List[str]]:
     """
     Extract named entities from a text string.
-    Returns dict with keys: firstnames, locations, emails, phones, urls, dates.
+    Combines spaCy NER (if available) with regex/wordlist lookup.
     """
     if not text:
         return {}
 
+    firstnames = []
+    locations = []
+    
+    if SPACY_AVAILABLE:
+        try:
+            doc = nlp(text)
+            for ent in doc.ents:
+                if ent.label_ == "PERSON":
+                    first_token = ent.text.split()[0].lower()
+                    if first_token in COMMON_FIRSTNAMES:
+                        firstnames.append(first_token.title())
+                elif ent.label_ in ("GPE", "LOC"):
+                    locations.append(ent.text.title())
+        except Exception:
+            pass
+
+    # Regex / Wordlist lookup (supplementary/fallback)
     text_lower = text.lower()
     words = re.findall(r"\b[a-zA-Zàâäéèêëïîôùûüÿœæç]+\b", text_lower)
 
-    firstnames = [w for w in words if w in COMMON_FIRSTNAMES]
-    locations = []
+    for w in words:
+        if w in COMMON_FIRSTNAMES:
+            firstnames.append(w.title())
+        if w in COMMON_CITIES:
+            locations.append(w.title())
 
-    # Check single words
-    for word in words:
-        if word in COMMON_CITIES:
-            locations.append(word.title())
-
-    # Check two-word combos (e.g., "new york", "hong kong")
     for i in range(len(words) - 1):
         two_word = f"{words[i]} {words[i+1]}"
         if two_word in COMMON_CITIES:
@@ -134,7 +157,7 @@ def extract_text_entities(text: str) -> Dict[str, List[str]]:
     dates = DATE_RE.findall(text)
 
     return {
-        "firstnames": [fn.title() for fn in set(firstnames)],
+        "firstnames": list(set(firstnames)),
         "locations": list(set(locations)),
         "emails": [e.lower() for e in set(emails)],
         "phones": list(set(phones)),
@@ -158,13 +181,28 @@ class DataAggregator:
         self.bio_keyword_counter: Counter = Counter()
         self.accounts: List[Dict[str, Any]] = []
         self._seen_urls: set = set()
+        
+        # V2 additions
+        self.timeline: List[Dict[str, Any]] = []
+        self.breaches: List[Dict[str, Any]] = []
+        self.phone_metadata: Dict[str, Any] = {}
 
     def ingest_tool_results(self, tool_name: str, results: Dict[str, Any]):
         """
         Process raw results from a tool and update internal counters.
         Each tool emits results in a standardized format.
         """
-        # Handle accounts/profiles list
+        # 1. Handle breaches (HIBP)
+        if tool_name == "hibp":
+            self.breaches.extend(results.get("breaches", []))
+            return
+
+        # 2. Handle phone metadata
+        if tool_name == "phone_lookup" and "metadata" in results:
+            self.phone_metadata = results.get("metadata", {})
+            return
+
+        # 3. Handle accounts/profiles list
         for account in results.get("accounts", []):
             url = account.get("url", "")
             if url and url not in self._seen_urls:
@@ -177,6 +215,15 @@ class DataAggregator:
                     "source_tool": tool_name,
                     "metadata": account.get("metadata", {}),
                 })
+                
+                # Check for timeline dates in account metadata
+                joined = account.get("metadata", {}).get("joined") or account.get("metadata", {}).get("created")
+                if joined:
+                    self.timeline.append({
+                        "date": str(joined),
+                        "event": f"Création de compte ({site})",
+                        "source": tool_name
+                    })
 
         # Process metadata/profile fields
         metadata = results.get("metadata", {})
@@ -212,6 +259,12 @@ class DataAggregator:
                 self.email_set.add(email)
             for phone in entities.get("phones", []):
                 self.phone_set.add(phone)
+            for date in entities.get("dates", []):
+                self.timeline.append({
+                    "date": date,
+                    "event": f"Date mentionnée dans la bio ({tool_name})",
+                    "source": tool_name
+                })
             # Bio keywords (exclude stopwords)
             stopwords = {"the", "a", "an", "is", "in", "on", "at", "for", "with",
                         "i", "me", "my", "and", "or", "of", "to", "it", "its"}
@@ -254,6 +307,19 @@ class DataAggregator:
         )
         confidence = min(1.0, data_points / 20)
 
+        # Sort timeline chronologically (rough fallback if string parsing fails)
+        def parse_date(item):
+            d_str = item.get("date", "")
+            # Try parsing YYYY-MM-DD or simple YYYY
+            for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y"):
+                try:
+                    return datetime.strptime(d_str, fmt)
+                except Exception:
+                    pass
+            return datetime.max
+
+        sorted_timeline = sorted(self.timeline, key=parse_date)
+
         return {
             "firstnames": dict(self.firstname_counter.most_common(10)),
             "lastnames": dict(self.lastname_counter.most_common(10)),
@@ -265,4 +331,7 @@ class DataAggregator:
             "total_accounts": len(self.accounts),
             "top_identity_guess": top_identity,
             "confidence_score": round(confidence, 2),
+            "timeline": sorted_timeline,
+            "breaches": self.breaches,
+            "phone_metadata": self.phone_metadata,
         }

@@ -18,6 +18,7 @@ from app.utils.redis_pubsub import publish_event_sync
 logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+PROXY_URL = os.getenv("PROXY_URL", None)
 
 
 def _publish(scan_id: str, event: str, data: dict):
@@ -66,6 +67,12 @@ def run_scan(self: Task, scan_id: str, target: str, target_type: str = "auto") -
     Main Celery task that orchestrates all OSINT tools for a given target.
     Updates the DB and publishes WebSocket events throughout.
     """
+    # Configure global proxies for standard HTTP libraries (maigret, holehe, scrapers)
+    if PROXY_URL:
+        os.environ["HTTP_PROXY"] = PROXY_URL
+        os.environ["HTTPS_PROXY"] = PROXY_URL
+        logger.info(f"[Scan {scan_id}] Configured global proxy environment: {PROXY_URL}")
+
     # Detect type if auto
     if target_type == "auto":
         target_type = detect_input_type(target)
@@ -112,6 +119,9 @@ def run_scan(self: Task, scan_id: str, target: str, target_type: str = "auto") -
             "timestamp": datetime.utcnow().isoformat(),
         })
 
+        # Send Webhook alerts
+        _send_webhooks(target, target_type, summary)
+
         return {"status": "completed", "scan_id": scan_id, "summary": summary}
 
     except Exception as e:
@@ -126,18 +136,17 @@ def run_scan(self: Task, scan_id: str, target: str, target_type: str = "auto") -
 
 def _run_username_scan(scan_id: str, username: str, aggregator: DataAggregator) -> Dict:
     """
-    Run username scan: Maigret (deep) + Sherlock (broad) + Scraper (enrichment).
-    Maigret and Sherlock run sequentially to enable deduplication.
-    Scraper runs after with the combined URL list.
+    Run username scan: Maigret (deep) + Sherlock (broad) + WhatsMyName + Scraper.
     """
     from app.workers.maigret_worker import run_maigret
     from app.workers.sherlock_worker import run_sherlock
+    from app.workers.whatsmyname_worker import run_whatsmyname
     from app.workers.scraper_worker import run_scraper
 
     results = {}
+    callback = _make_progress_callback(scan_id, "maigret")
 
     # 1. Maigret — deep metadata extraction
-    callback = _make_progress_callback(scan_id, "maigret")
     maigret_results = _run_async(
         run_maigret(
             username=username,
@@ -150,30 +159,56 @@ def _run_username_scan(scan_id: str, username: str, aggregator: DataAggregator) 
 
     # 2. Sherlock — broad fast sweep, deduplicated
     maigret_urls = {acc["url"] for acc in maigret_results.get("accounts", [])}
+    sherlock_callback = _make_progress_callback(scan_id, "sherlock")
     sherlock_results = _run_async(
         run_sherlock(
             username=username,
             scan_id=scan_id,
             existing_urls=maigret_urls,
-            progress_callback=_async_wrap(callback),
+            progress_callback=_async_wrap(sherlock_callback),
+            proxy_url=PROXY_URL,
         )
     )
     results["sherlock"] = sherlock_results
     aggregator.ingest_tool_results("sherlock", sherlock_results)
 
-    # 3. Scraper — enrich top profile pages
+    # 3. WhatsMyName — concurrent swift check
+    wmn_callback = _make_progress_callback(scan_id, "whatsmyname")
+    whatsmyname_results = _run_async(
+        run_whatsmyname(
+            username=username,
+            scan_id=scan_id,
+            progress_callback=_async_wrap(wmn_callback),
+            proxy_url=PROXY_URL,
+        )
+    )
+    results["whatsmyname"] = whatsmyname_results
+    aggregator.ingest_tool_results("whatsmyname", whatsmyname_results)
+
+    # 4. Scraper — enrich top profile pages
     all_urls = [acc["url"] for acc in maigret_results.get("accounts", [])]
     all_urls += [acc["url"] for acc in sherlock_results.get("accounts", [])]
+    all_urls += [acc["url"] for acc in whatsmyname_results.get("accounts", [])]
+    
+    # Deduplicate keeping order
+    seen_urls = set()
+    deduped_urls = []
+    for u in all_urls:
+        if u not in seen_urls:
+            seen_urls.add(u)
+            deduped_urls.append(u)
+
     # Prioritize high-value platforms
     priority = ["twitter", "instagram", "github", "reddit", "linkedin"]
-    all_urls = _prioritize_urls(all_urls, priority)
+    deduped_urls = _prioritize_urls(deduped_urls, priority)
 
-    if all_urls:
+    if deduped_urls:
+        scraper_callback = _make_progress_callback(scan_id, "scraper")
         scraper_results = _run_async(
             run_scraper(
-                urls=all_urls[:25],
+                urls=deduped_urls[:25],
                 scan_id=scan_id,
-                progress_callback=_async_wrap(callback),
+                progress_callback=_async_wrap(scraper_callback),
             )
         )
         results["scraper"] = scraper_results
@@ -192,45 +227,61 @@ def _run_username_scan(scan_id: str, username: str, aggregator: DataAggregator) 
 
 def _run_email_scan(scan_id: str, email: str, aggregator: DataAggregator) -> Dict:
     """
-    Run email scan: Holehe (registrations) + GHunt (Google account) + Scraper.
+    Run email scan: Holehe (registrations) + GHunt (Google account) + HIBP + Scraper.
     """
     from app.workers.holehe_worker import run_holehe
     from app.workers.ghunt_worker import run_ghunt
+    from app.workers.hibp_worker import run_hibp
     from app.workers.scraper_worker import run_scraper
 
     results = {}
-    callback = _make_progress_callback(scan_id, "holehe")
-
+    
     # 1. Holehe — check 120+ services
+    holehe_callback = _make_progress_callback(scan_id, "holehe")
     holehe_results = _run_async(
         run_holehe(
             email=email,
             scan_id=scan_id,
-            progress_callback=_async_wrap(callback),
+            progress_callback=_async_wrap(holehe_callback),
         )
     )
     results["holehe"] = holehe_results
     aggregator.ingest_tool_results("holehe", holehe_results)
 
     # 2. GHunt — Google-specific intelligence
+    ghunt_callback = _make_progress_callback(scan_id, "ghunt")
     ghunt_results = _run_async(
         run_ghunt(
             email=email,
             scan_id=scan_id,
-            progress_callback=_async_wrap(callback),
+            progress_callback=_async_wrap(ghunt_callback),
         )
     )
     results["ghunt"] = ghunt_results
     aggregator.ingest_tool_results("ghunt", ghunt_results)
 
-    # 3. Scraper on found account URLs
+    # 3. HaveIBeenPwned — check data leaks
+    hibp_callback = _make_progress_callback(scan_id, "hibp")
+    hibp_results = _run_async(
+        run_hibp(
+            email=email,
+            scan_id=scan_id,
+            progress_callback=_async_wrap(hibp_callback),
+            proxy_url=PROXY_URL,
+        )
+    )
+    results["hibp"] = hibp_results
+    aggregator.ingest_tool_results("hibp", hibp_results)
+
+    # 4. Scraper on found account URLs
     all_urls = [acc["url"] for acc in holehe_results.get("accounts", [])]
     if all_urls:
+        scraper_callback = _make_progress_callback(scan_id, "scraper")
         scraper_results = _run_async(
             run_scraper(
                 urls=all_urls[:20],
                 scan_id=scan_id,
-                progress_callback=_async_wrap(callback),
+                progress_callback=_async_wrap(scraper_callback),
             )
         )
         results["scraper"] = scraper_results
@@ -241,17 +292,119 @@ def _run_email_scan(scan_id: str, email: str, aggregator: DataAggregator) -> Dic
 
 def _run_phone_scan(scan_id: str, phone: str, aggregator: DataAggregator) -> Dict:
     """
-    Phone scans are limited — we publish an informational event and return.
-    Future: integrate NumLookup or similar.
+    Perform local phone number lookup using the phonenumbers library.
+    Extracts geocoding, carrier, timezone, and formatting information.
     """
-    _publish(scan_id, "tool_update", {
-        "tool": "phone_lookup",
-        "status": "skipped",
-        "message": "Phone OSINT requires external API keys (future feature)",
-        "sites_found": 0,
-        "sites_checked": 0,
-    })
-    return {}
+    logger.info(f"[Scan {scan_id}] Running phone lookup for {phone}")
+    callback = _make_progress_callback(scan_id, "phone_lookup")
+    
+    # Notify start
+    _run_async(_async_wrap(callback)("phone_lookup", "running", 0, 1))
+
+    metadata = {}
+    try:
+        import phonenumbers
+        from phonenumbers import geocoder, carrier, timezone
+
+        parsed = phonenumbers.parse(phone, None)
+        if phonenumbers.is_valid_number(parsed):
+            # Formats
+            formatted_e164 = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+            formatted_intl = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
+            formatted_nat = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.NATIONAL)
+            
+            # Geography & Carrier
+            region = geocoder.description_for_number(parsed, "fr")
+            carrier_name = carrier.name_for_number(parsed, "fr")
+            zones = list(timezone.time_zones_for_number(parsed))
+
+            metadata = {
+                "valid": True,
+                "e164": formatted_e164,
+                "international": formatted_intl,
+                "national": formatted_nat,
+                "location": region or "Inconnu",
+                "carrier": carrier_name or "Inconnu",
+                "timezones": zones,
+                "country_code": parsed.country_code,
+                "national_number": parsed.national_number,
+            }
+        else:
+            metadata = {
+                "valid": False,
+                "error": "Numéro de téléphone invalide selon les normes E.164"
+            }
+    except Exception as e:
+        logger.error(f"Phone lookup error: {e}", exc_info=True)
+        metadata = {
+            "valid": False,
+            "error": str(e)
+        }
+
+    results = {
+        "tool_name": "phone_lookup",
+        "status": "completed",
+        "sites_found": 1 if metadata.get("valid") else 0,
+        "sites_checked": 1,
+        "metadata": metadata
+    }
+
+    aggregator.ingest_tool_results("phone_lookup", results)
+    
+    # Notify completion
+    _run_async(_async_wrap(callback)("phone_lookup", "completed", 1 if metadata.get("valid") else 0, 1))
+
+    return {"phone_lookup": results}
+
+
+def _send_webhooks(target: str, target_type: str, summary: dict):
+    """Send summary results to Discord or Telegram webhooks if configured."""
+    import httpx
+    
+    discord_url = os.getenv("DISCORD_WEBHOOK_URL")
+    tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    tg_chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    
+    if not (discord_url or (tg_token and tg_chat_id)):
+        return
+
+    accounts_count = summary.get("total_accounts", 0)
+    identity = summary.get("top_identity_guess", "Inconnue")
+    confidence = int((summary.get("confidence_score", 0.0)) * 100)
+    
+    # Format message
+    msg = (
+        f"🔭 **Rapport d'Investigation OSINT**\n"
+        f"🎯 **Cible** : `{target}` ({target_type})\n"
+        f"👥 **Identité estimée** : {identity} ({confidence}% de confiance)\n"
+        f"🔗 **Profils trouvés** : {accounts_count} comptes détectés\n"
+    )
+    
+    # List top 5 accounts if any
+    accounts = summary.get("accounts", [])
+    if accounts:
+        msg += "\n**Top profils identifiés** :\n"
+        for acc in accounts[:5]:
+            msg += f"- {acc.get('site_name')}: {acc.get('url')}\n"
+
+    # Send to Discord
+    if discord_url:
+        try:
+            httpx.post(discord_url, json={"content": msg}, timeout=5.0)
+            logger.info("Discord webhook sent successfully")
+        except Exception as e:
+            logger.warning(f"Failed to send Discord webhook: {e}")
+
+    # Send to Telegram
+    if tg_token and tg_chat_id:
+        try:
+            tg_url = f"https://api.telegram.org/bot{tg_token}/sendMessage"
+            tg_msg = msg.replace("**", "*")  # Convert markdown bold to telegram format
+            httpx.post(tg_url, json={"chat_id": tg_chat_id, "text": tg_msg, "parse_mode": "Markdown"}, timeout=5.0)
+            logger.info("Telegram notification sent successfully")
+        except Exception as e:
+            logger.warning(f"Failed to send Telegram notification: {e}")
+
 
 
 def _async_wrap(sync_callback):

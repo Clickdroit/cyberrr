@@ -69,6 +69,8 @@ class ScanResponse(BaseModel):
     completed_at: Optional[datetime] = None
     tools: List[ToolStatusSchema] = []
     summary: Optional[CorrelationSummary] = None
+    notes: Optional[str] = None
+    tags: Optional[List[str]] = []
 
     model_config = {"from_attributes": True}
 
@@ -80,11 +82,19 @@ class ScanListItem(BaseModel):
     status: str
     created_at: datetime
     total_accounts: int = 0
+    notes: Optional[str] = None
+    tags: Optional[List[str]] = []
 
     model_config = {"from_attributes": True}
 
 
+class ScanMetadataUpdate(BaseModel):
+    notes: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+
 # ── WebSocket event schemas ──────────────────────────────────────────────────
+
 
 class WSEvent(BaseModel):
     """Payload pushed via WebSocket to the frontend."""

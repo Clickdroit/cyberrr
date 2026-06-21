@@ -23,6 +23,8 @@
 
   <!-- Custom CSS -->
   <link rel="stylesheet" href="/css/style.css" />
+  <!-- Vis.js Standalone for Graph Visualization -->
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 </head>
 <body>
 
@@ -98,6 +100,9 @@
       <nav class="flex items-center gap-1">
         <button data-nav="home" class="tab-btn active text-xs" aria-label="Accueil">
           🏠 <span class="hidden sm:inline">Accueil</span>
+        </button>
+        <button data-nav="compare" class="tab-btn text-xs" aria-label="Comparateur">
+          ⚔️ <span class="hidden sm:inline">Comparateur</span>
         </button>
         <button data-nav="history" class="tab-btn text-xs" aria-label="Historique">
           📋 <span class="hidden sm:inline">Historique</span>
@@ -214,13 +219,16 @@
   <!-- ── RESULTS VIEW ──────────────────────────────── -->
   <main id="view-results" class="hidden flex-1 max-w-5xl w-full mx-auto px-4 py-8">
     <!-- Header -->
-    <div class="flex items-center justify-between mb-6 flex-wrap gap-4">
+    <div class="flex items-center justify-between mb-6 flex-wrap gap-4 no-print">
       <div>
         <div class="text-xs uppercase tracking-widest text-secondary mb-1">Rapport d'investigation</div>
         <h2 class="text-2xl font-bold font-mono text-cyan" id="results-target">—</h2>
         <div class="text-sm text-secondary mt-1" id="results-total"></div>
       </div>
       <div class="flex gap-2">
+        <button onclick="window.print()" class="btn-primary text-sm flex items-center gap-2" style="background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); color: #fff;">
+          🖨️ Imprimer / PDF
+        </button>
         <button onclick="showView('home'); document.getElementById('search-input').value=''" 
                 class="btn-secondary text-sm">
           ← Nouvelle recherche
@@ -228,14 +236,24 @@
       </div>
     </div>
 
+    <!-- Print Title Header (Only visible on print) -->
+    <div class="print-only mb-8">
+      <h1 class="text-3xl font-bold font-mono text-cyan">RAPPORT D'INVESTIGATION OSINT</h1>
+      <p class="text-sm text-secondary">Généré le <span id="print-date"></span> via OSINT Hub</p>
+      <hr style="border-color: #333; margin: 15px 0;" />
+    </div>
+
     <!-- Tabs -->
     <div class="glass-card mb-6">
-      <div class="tab-bar">
+      <div class="tab-bar no-print">
         <button class="tab-btn active" data-tab="profile">
           🧠 Profil Type
         </button>
         <button class="tab-btn" data-tab="accounts">
           🗺️ Cartographie
+        </button>
+        <button class="tab-btn" data-tab="graph">
+          🕸️ Graphe
         </button>
         <button class="tab-btn" data-tab="pivot">
           🔄 Pivot
@@ -250,10 +268,48 @@
         <div id="tab-accounts" class="tab-content hidden">
           <div class="text-center py-8 text-secondary">Chargement...</div>
         </div>
+        <div id="tab-graph" class="tab-content hidden">
+          <div class="text-xs uppercase tracking-widest text-secondary mb-3">🕸️ Graphe de relations interactif</div>
+          <div id="relation-graph" style="height: 500px; width: 100%;" class="rounded-xl border border-white/5 bg-black/40 relative overflow-hidden"></div>
+          <p class="text-xs text-secondary mt-2">Faites glisser les nœuds pour réorganiser le graphe. Molette pour zoomer.</p>
+        </div>
         <div id="tab-pivot" class="tab-content hidden">
           <div class="text-center py-8 text-secondary">Chargement...</div>
         </div>
       </div>
+    </div>
+  </main>
+
+  <!-- ── COMPARE VIEW ──────────────────────────────── -->
+  <main id="view-compare" class="hidden flex-1 max-w-4xl w-full mx-auto px-4 py-8">
+    <div class="mb-8">
+      <h2 class="text-2xl font-bold">Recoupement & Comparaison</h2>
+      <p class="text-secondary text-sm mt-1">Sélectionnez deux investigations passées pour en identifier les points de recoupement</p>
+    </div>
+    
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+      <div class="glass-card p-5">
+        <label class="text-xs uppercase tracking-widest text-secondary block mb-2">Scan Source (A)</label>
+        <select id="compare-select-a" class="form-input bg-black/40 text-sm">
+          <option value="">Sélectionner une cible...</option>
+        </select>
+      </div>
+      <div class="glass-card p-5">
+        <label class="text-xs uppercase tracking-widest text-secondary block mb-2">Scan Cible (B)</label>
+        <select id="compare-select-b" class="form-input bg-black/40 text-sm">
+          <option value="">Sélectionner une cible...</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="text-center mb-8">
+      <button id="compare-run-btn" class="btn-primary">
+        ⚡ Lancer le recoupement
+      </button>
+    </div>
+
+    <div id="compare-results" class="hidden flex flex-col gap-6">
+      <!-- Injected by JS -->
     </div>
   </main>
 

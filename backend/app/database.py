@@ -58,6 +58,8 @@ class Scan(Base):
     created_at = Column(DateTime, default=func.now())
     completed_at = Column(DateTime, nullable=True)
     summary = Column(JSON, nullable=True)  # Aggregated results JSON
+    notes = Column(Text, nullable=True)
+    tags = Column(JSON, nullable=True)  # List of strings as JSON
 
     results = relationship("ScanResult", back_populates="scan", cascade="all, delete-orphan")
     entities = relationship("CorrelatedEntity", back_populates="scan", cascade="all, delete-orphan")
@@ -118,3 +120,16 @@ async def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        
+        # Auto-migration schema check for notes and tags columns
+        def migrate_schema(connection):
+            cursor = connection.connection.cursor()
+            cursor.execute("PRAGMA table_info(scans)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "notes" not in columns:
+                cursor.execute("ALTER TABLE scans ADD COLUMN notes TEXT")
+            if "tags" not in columns:
+                cursor.execute("ALTER TABLE scans ADD COLUMN tags TEXT")
+        
+        await conn.run_sync(migrate_schema)
+

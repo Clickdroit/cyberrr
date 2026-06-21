@@ -56,7 +56,7 @@ function toast(message, type = 'info', duration = 3500) {
 
 // ── View Router ───────────────────────────────────────────────────────────
 function showView(viewName) {
-  ['view-home', 'view-scanning', 'view-results', 'view-history'].forEach(id => {
+  ['view-home', 'view-scanning', 'view-results', 'view-history', 'view-compare'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.classList.add('hidden');
   });
@@ -265,8 +265,10 @@ function renderScanningView(scan) {
   const toolMeta = {
     maigret:      { icon: '🔭', label: 'Maigret',     desc: 'Analyse profonde + métadonnées' },
     sherlock:     { icon: '🕵️', label: 'Sherlock',    desc: 'Scan rapide 400+ sites' },
+    whatsmyname:  { icon: '🔎', label: 'WhatsMyName',  desc: 'Scan concurrent 600+ sites' },
     holehe:       { icon: '🔑', label: 'Holehe',       desc: 'Vérification email 120+ services' },
     ghunt:        { icon: '🌐', label: 'GHunt',        desc: 'Intelligence Google/Gmail' },
+    hibp:         { icon: '🔓', label: 'HIBP Check',   desc: 'Vérification fuites de données' },
     scraper:      { icon: '🕸️', label: 'Web Scraper', desc: 'Extraction emails & liens' },
     phone_lookup: { icon: '📞', label: 'Phone Lookup', desc: 'Recherche numéro de téléphone' },
   };
@@ -392,6 +394,11 @@ function switchTab(tabName) {
     content.classList.add('fade-in');
     setTimeout(() => content.classList.remove('fade-in'), 400);
   }
+
+  if (tabName === 'graph' && State.summary) {
+    // Render the Vis.js dynamic network graph
+    setTimeout(() => renderRelationGraph(State.summary), 50);
+  }
 }
 
 function renderProfileTab(summary) {
@@ -402,9 +409,103 @@ function renderProfileTab(summary) {
   const circumference = 2 * Math.PI * 44;
   const offset = circumference - (confidence / 100) * circumference;
 
-  // Top identity card
-  const topName = Object.entries(summary.firstnames || {}).sort((a,b) => b[1]-a[1])[0];
-  const topLoc  = Object.entries(summary.locations || {}).sort((a,b) => b[1]-a[1])[0];
+  // Render phone lookup metadata if valid
+  let phoneHtml = '';
+  if (summary.phone_metadata && summary.phone_metadata.valid) {
+    const meta = summary.phone_metadata;
+    phoneHtml = `
+      <div class="glass-card p-5 mb-6">
+        <div class="text-xs uppercase tracking-widest text-secondary mb-3 flex items-center gap-2">
+          <span>📞</span> Informations Numéro de Téléphone
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm font-mono">
+          <div><span class="text-dim">Format E.164:</span> <span class="text-cyan">${meta.e164}</span></div>
+          <div><span class="text-dim">International:</span> <span class="text-primary">${meta.international}</span></div>
+          <div><span class="text-dim">Opérateur:</span> <span class="text-purple">${meta.carrier}</span></div>
+          <div><span class="text-dim">Localisation:</span> <span class="text-green">${meta.location}</span></div>
+          <div><span class="text-dim">Fuseaux Horaires:</span> <span class="text-primary">${(meta.timezones || []).join(', ')}</span></div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Render HaveIBeenPwned leaks if any
+  let breachesHtml = '';
+  if (summary.breaches && summary.breaches.length > 0) {
+    breachesHtml = `
+      <div class="glass-card p-5 mb-6">
+        <div class="text-xs uppercase tracking-widest text-red-400 mb-3 flex items-center gap-2">
+          <span>⚠️</span> Violations de Données (HIBP Leaks)
+        </div>
+        <div class="flex flex-col gap-4">
+          ${summary.breaches.map(b => `
+            <div class="border-b border-white/5 pb-3 last:border-0 last:pb-0">
+              <div class="flex justify-between flex-wrap gap-2 mb-1">
+                <span class="font-bold text-sm text-red-400">${b.name} (${b.domain})</span>
+                <span class="text-xs font-mono text-dim">${b.date}</span>
+              </div>
+              <p class="text-xs text-secondary mb-2">${b.details}</p>
+              <div class="flex flex-wrap gap-1">
+                ${(b.data_classes || []).map(dc => `
+                  <span class="tag-badge" style="font-size: 9px; padding: 2px 6px; background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.25); color: #ef4444;">
+                    ${dc}
+                  </span>
+                `).join('')}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  // Render timeline if available
+  let timelineHtml = '';
+  if (summary.timeline && summary.timeline.length > 0) {
+    timelineHtml = `
+      <div class="glass-card p-5 mb-6">
+        <div class="text-xs uppercase tracking-widest text-secondary mb-3 flex items-center gap-2">
+          <span>📅</span> Timeline d'Activité OSINT
+        </div>
+        <div class="timeline-container">
+          ${summary.timeline.map(item => `
+            <div class="timeline-item">
+              <div class="timeline-date">${item.date}</div>
+              <div class="timeline-event">${item.event}</div>
+              <div class="timeline-source">${item.source}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  // Render notes and tags editor
+  const tagsStr = (State.currentScan?.tags || []).join(', ');
+  const notesStr = State.currentScan?.notes || '';
+  const metadataHtml = `
+    <div class="glass-card p-5 mb-6 no-print">
+      <div class="text-xs uppercase tracking-widest text-secondary mb-4 flex items-center justify-between">
+        <span>📝 Notes d'Investigation & Étiquettes</span>
+        <span class="text-dim">Persistant</span>
+      </div>
+      <div class="flex flex-col gap-4">
+        <div>
+          <label class="text-xs text-secondary block mb-1">Étiquettes (séparées par des virgules)</label>
+          <input id="scan-tags-input" type="text" class="form-input text-sm" placeholder="ex: suspect, priorite-haute, faux-positif" value="${tagsStr}" />
+        </div>
+        <div>
+          <label class="text-xs text-secondary block mb-1">Remarques & Observations</label>
+          <textarea id="scan-notes-input" class="form-input text-sm h-24" placeholder="Saisir des notes libres sur cette cible...">${notesStr}</textarea>
+        </div>
+        <div class="flex justify-end">
+          <button id="save-metadata-btn" class="btn-primary text-xs py-2 px-4" onclick="saveScanMetadata()">
+            💾 Enregistrer les notes
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
 
   container.innerHTML = `
     <!-- Identity Card -->
@@ -429,6 +530,11 @@ function renderProfileTab(summary) {
               ${State.currentScan?.targetType || ''}
             </span>
           </div>
+          ${State.currentScan?.tags && State.currentScan.tags.length > 0 ? `
+            <div class="flex flex-wrap gap-1.5 mt-2">
+              ${State.currentScan.tags.map(t => `<span class="tag-badge compare-tag">${t}</span>`).join('')}
+            </div>
+          ` : ''}
         </div>
         <!-- Confidence Ring -->
         <div class="confidence-ring flex-shrink-0">
@@ -452,6 +558,12 @@ function renderProfileTab(summary) {
         </div>
       </div>
     </div>
+
+    <!-- Phone Info (Conditional) -->
+    ${phoneHtml}
+
+    <!-- HaveIBeenPwned Leaks (Conditional) -->
+    ${breachesHtml}
 
     <!-- Entity Chips Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -519,6 +631,10 @@ function renderProfileTab(summary) {
         </div>
       </div>` : ''}
     </div>
+
+    <!-- Timeline & Notes -->
+    ${timelineHtml}
+    ${metadataHtml}
   `;
 }
 
@@ -802,6 +918,7 @@ function init() {
     btn.addEventListener('click', () => {
       const view = btn.dataset.nav;
       if (view === 'history') loadHistory();
+      if (view === 'compare') loadCompareDropdowns();
       showView(view);
     });
   });
@@ -817,12 +934,343 @@ function init() {
     input.type = input.type === 'password' ? 'text' : 'password';
   });
 
+  // Compare run button
+  document.getElementById('compare-run-btn')?.addEventListener('click', runComparison);
+
   // Check auth state
   checkAuth();
 }
+
+// ── Vis.js Relation Graph ──────────────────────────────────────────────────
+let relationNetwork = null;
+
+function renderRelationGraph(summary) {
+  const container = document.getElementById('relation-graph');
+  if (!container) return;
+
+  const target = State.currentScan?.target || 'Cible';
+  const accounts = summary.accounts || [];
+
+  const nodes = [];
+  const edges = [];
+
+  // 1. Center target node
+  nodes.push({
+    id: 'target',
+    label: target,
+    title: `Cible principale`,
+    size: 26,
+    font: { color: '#00d4ff', face: 'JetBrains Mono', size: 14, bold: true },
+    color: { border: '#00d4ff', background: '#080b14', highlight: '#00d4ff' },
+    shape: 'dot'
+  });
+
+  // Categories mapping
+  const categoryNodes = {
+    social: { id: 'cat-social', label: 'Réseaux Sociaux', icon: '📱', color: '#60a5fa' },
+    gaming: { id: 'cat-gaming', label: 'Gaming', icon: '🎮', color: '#a78bfa' },
+    tech: { id: 'cat-tech', label: 'Tech & Dev', icon: '💻', color: '#34d399' },
+    forum: { id: 'cat-forum', label: 'Forums', icon: '💬', color: '#fbbf24' },
+    music: { id: 'cat-music', label: 'Musique', icon: '🎵', color: '#f472b6' },
+    media: { id: 'cat-media', label: 'Médias', icon: '📺', color: '#f87171' },
+    dating: { id: 'cat-dating', label: 'Dating', icon: '❤️', color: '#fb7185' },
+    professional: { id: 'cat-professional', label: 'Pro', icon: '💼', color: '#38bdf8' },
+    other: { id: 'cat-other', label: 'Autres', icon: '🌐', color: '#94a3b8' }
+  };
+
+  const activeCategories = new Set();
+
+  accounts.forEach((acc, idx) => {
+    const cat = acc.category || 'other';
+    activeCategories.add(cat);
+
+    // Account node
+    const nodeId = `acc-${idx}`;
+    const hostname = new URL(acc.url).hostname;
+    const favicon = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=64`;
+
+    nodes.push({
+      id: nodeId,
+      label: acc.site_name,
+      title: `${acc.site_name}\n${acc.url}`,
+      shape: 'image',
+      image: favicon,
+      size: 16,
+      font: { color: '#f0f4ff', size: 11 },
+      color: { border: '#222', background: '#0d1224' }
+    });
+
+    // Edge from Category node to Account node
+    edges.push({
+      from: `cat-${cat}`,
+      to: nodeId,
+      color: { color: '#444', highlight: '#777' },
+      width: 1
+    });
+  });
+
+  // Push active categories and draw edges to center target
+  activeCategories.forEach(cat => {
+    const info = categoryNodes[cat] || categoryNodes.other;
+    nodes.push({
+      id: info.id,
+      label: `${info.icon} ${info.label}`,
+      size: 20,
+      font: { color: info.color, size: 12, bold: true },
+      color: { border: info.color, background: '#080b14' },
+      shape: 'dot'
+    });
+
+    edges.push({
+      from: 'target',
+      to: info.id,
+      color: { color: info.color, opacity: 0.6 },
+      width: 2,
+      length: 120
+    });
+  });
+
+  // Dotted edges for extracted metadata correlations (Prénoms, localisations)
+  const firstnames = Object.keys(summary.firstnames || {}).slice(0, 2);
+  const locations = Object.keys(summary.locations || {}).slice(0, 2);
+
+  firstnames.forEach((fn, idx) => {
+    const nodeId = `fn-${idx}`;
+    nodes.push({
+      id: nodeId,
+      label: `👤 ${fn}`,
+      shape: 'box',
+      font: { color: '#00d4ff', size: 10 },
+      color: { border: 'rgba(0, 212, 255, 0.3)', background: 'rgba(0, 212, 255, 0.05)' }
+    });
+    edges.push({ from: 'target', to: nodeId, dashes: true, color: '#00d4ff', opacity: 0.5 });
+  });
+
+  locations.forEach((loc, idx) => {
+    const nodeId = `loc-${idx}`;
+    nodes.push({
+      id: nodeId,
+      label: `📍 ${loc}`,
+      shape: 'box',
+      font: { color: '#a78bfa', size: 10 },
+      color: { border: 'rgba(124, 58, 237, 0.3)', background: 'rgba(124, 58, 237, 0.05)' }
+    });
+    edges.push({ from: 'target', to: nodeId, dashes: true, color: '#a78bfa', opacity: 0.5 });
+  });
+
+  const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+  const options = {
+    physics: {
+      barnesHut: {
+        gravitationalConstant: -1500,
+        centralGravity: 0.2,
+        springLength: 95,
+        springConstant: 0.04
+      },
+      solver: 'barnesHut'
+    },
+    interaction: {
+      hover: true,
+      zoomView: true,
+      dragView: true
+    }
+  };
+
+  if (relationNetwork) relationNetwork.destroy();
+  relationNetwork = new vis.Network(container, data, options);
+}
+
+// ── Metadata Save REST ──────────────────────────────────────────────────────
+async function saveScanMetadata() {
+  const scanId = State.currentScan?.id;
+  if (!scanId) return;
+
+  const notes = document.getElementById('scan-notes-input').value;
+  const tagsInput = document.getElementById('scan-tags-input').value;
+  const tags = tagsInput.split(',').map(t => t.trim()).filter(t => t.length > 0);
+
+  const btn = document.getElementById('save-metadata-btn');
+  btn.disabled = true;
+  btn.textContent = 'Enregistrement...';
+
+  const res = await fetch(`/api/scan/${scanId}/metadata`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ notes, tags }),
+  });
+
+  if (res.ok) {
+    const updated = await res.json();
+    State.currentScan.notes = updated.notes;
+    State.currentScan.tags = updated.tags;
+    toast('Notes et étiquettes enregistrées', 'success');
+    
+    // Rerender profile tab to show tags immediately
+    if (State.summary) renderProfileTab(State.summary);
+  } else {
+    toast("Erreur lors de l'enregistrement", 'error');
+  }
+  btn.disabled = false;
+  btn.textContent = '💾 Enregistrer les notes';
+}
+
+// ── Comparison Logic ───────────────────────────────────────────────────────
+async function loadCompareDropdowns() {
+  const selectA = document.getElementById('compare-select-a');
+  const selectB = document.getElementById('compare-select-b');
+  if (!selectA || !selectB) return;
+
+  // Refresh history
+  await loadHistory();
+
+  const options = ['<option value="">Sélectionner une cible...</option>'];
+  State.history.forEach(item => {
+    options.push(`<option value="${item.scan_id}">${item.target} (${item.target_type})</option>`);
+  });
+
+  selectA.innerHTML = options.join('');
+  selectB.innerHTML = options.join('');
+  
+  // Hide results card if open
+  document.getElementById('compare-results').classList.add('hidden');
+}
+
+async function runComparison() {
+  const scanIdA = document.getElementById('compare-select-a').value;
+  const scanIdB = document.getElementById('compare-select-b').value;
+  
+  if (!scanIdA || !scanIdB) {
+    toast('Veuillez sélectionner deux scans', 'error');
+    return;
+  }
+  if (scanIdA === scanIdB) {
+    toast('Sélectionnez deux scans différents', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('compare-run-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin inline-block">↻</span> Comparaison...';
+
+  const scanA = await API.get(`/api/scan/${scanIdA}`);
+  const scanB = await API.get(`/api/scan/${scanIdB}`);
+
+  if (!scanA || !scanB || !scanA.summary || !scanB.summary) {
+    toast("Données de scan incomplètes ou indisponibles", 'error');
+    btn.disabled = false;
+    btn.textContent = '⚡ Lancer le recoupement';
+    return;
+  }
+
+  renderComparison(scanA, scanB);
+  
+  btn.disabled = false;
+  btn.textContent = '⚡ Lancer le recoupement';
+}
+
+function renderComparison(scanA, scanB) {
+  const container = document.getElementById('compare-results');
+  if (!container) return;
+
+  const sumA = scanA.summary;
+  const sumB = scanB.summary;
+
+  // Correlation matches
+  const commonFirstnames = Object.keys(sumA.firstnames || {}).filter(fn => 
+    Object.keys(sumB.firstnames || {}).includes(fn)
+  );
+
+  const commonLocations = Object.keys(sumA.locations || {}).filter(loc => 
+    Object.keys(sumB.locations || {}).includes(loc)
+  );
+
+  const commonEmails = (sumA.emails_found || []).filter(e => 
+    (sumB.emails_found || []).includes(e)
+  );
+
+  const sitesA = new Set((sumA.accounts || []).map(a => a.site_name));
+  const sitesB = new Set((sumB.accounts || []).map(a => a.site_name));
+  const commonPlatforms = [...sitesA].filter(site => sitesB.has(site));
+
+  let html = `
+    <div class="glass-card p-6">
+      <h3 class="text-lg font-bold mb-4 gradient-text">Résultats du recoupement</h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <div class="text-sm font-semibold text-secondary uppercase mb-2">Scan A: ${scanA.target}</div>
+          <div class="text-xs text-dim mb-4">Type: ${scanA.target_type} · ${sumA.total_accounts} comptes trouvés</div>
+        </div>
+        <div>
+          <div class="text-sm font-semibold text-secondary uppercase mb-2">Scan B: ${scanB.target}</div>
+          <div class="text-xs text-dim mb-4">Type: ${scanB.target_type} · ${sumB.total_accounts} comptes trouvés</div>
+        </div>
+      </div>
+  `;
+
+  if (commonFirstnames.length || commonLocations.length || commonEmails.length || commonPlatforms.length) {
+    html += `
+      <div class="mt-6 border-t border-white/5 pt-6">
+        <h4 class="text-sm font-semibold text-secondary uppercase tracking-widest mb-4">Matches & Corrélations</h4>
+        
+        <div class="flex flex-col gap-4">
+          ${commonEmails.map(email => `
+            <div class="correlation-match-card">
+              <div class="text-green font-bold text-sm mb-1">✉️ Adresse Email Identique</div>
+              <div class="font-mono text-xs text-primary">${email}</div>
+            </div>
+          `).join('')}
+
+          ${commonFirstnames.map(fn => `
+            <div class="correlation-match-card">
+              <div class="text-green font-bold text-sm mb-1">👤 Prénom Similaire</div>
+              <div class="text-xs text-primary">${fn}</div>
+            </div>
+          `).join('')}
+
+          ${commonLocations.map(loc => `
+            <div class="correlation-match-card">
+              <div class="text-green font-bold text-sm mb-1">📍 Localisation Partagée</div>
+              <div class="text-xs text-primary">${loc}</div>
+            </div>
+          `).join('')}
+
+          ${commonPlatforms.length > 0 ? `
+            <div class="correlation-match-card">
+              <div class="text-green font-bold text-sm mb-1">📱 Présence sur les mêmes plateformes</div>
+              <div class="flex flex-wrap gap-2 mt-2">
+                ${commonPlatforms.map(site => `<span class="tag-badge compare-tag">${site}</span>`).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  } else {
+    html += `
+      <div class="mt-6 border-t border-white/5 pt-6 text-center py-8 text-secondary">
+        <div class="text-3xl mb-2">🤷</div>
+        <div class="text-sm">Aucun point de recoupement évident détecté</div>
+        <div class="text-xs text-dim mt-1">Les cibles ne partagent aucun prénom, localisation, email ou plateforme.</div>
+      </div>
+    `;
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
+  container.classList.remove('hidden');
+}
+
+// ── Print date logic ───────────────────────────────────────────────────────
+window.addEventListener('beforeprint', () => {
+  const dateEl = document.getElementById('print-date');
+  if (dateEl) dateEl.textContent = new Date().toLocaleString();
+});
 
 document.addEventListener('DOMContentLoaded', init);
 window.pivotOnEmail = pivotOnEmail;
 window.exportAccounts = exportAccounts;
 window.deleteScan = deleteScan;
 window.viewHistoryScan = viewHistoryScan;
+window.saveScanMetadata = saveScanMetadata;
+window.runComparison = runComparison;
