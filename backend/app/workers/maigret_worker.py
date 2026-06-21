@@ -128,7 +128,10 @@ async def run_maigret(
         return _empty_result(f"maigret not installed or import error: {e}")
 
     except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
         logger.error(f"Maigret error: {e}", exc_info=True)
+        log_scan_message(scan_id, f"❌ Maigret échec : {e}\n{tb}")
         if progress_callback:
             await progress_callback("maigret", "failed", 0, 0)
         return _empty_result(str(e))
