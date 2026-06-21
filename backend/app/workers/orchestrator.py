@@ -60,6 +60,8 @@ def _make_progress_callback(scan_id: str, tool_name: str):
         elif tool == "whatsmyname": emoji = "🔍"
         elif tool == "hibp": emoji = "🔑"
         elif tool == "phone_lookup": emoji = "📞"
+        elif tool == "ip_lookup": emoji = "📍"
+        elif tool == "domain_lookup": emoji = "🌐"
         
         status_map = {
             "pending": "En attente",
@@ -100,11 +102,16 @@ def run_scan(self: Task, scan_id: str, target: str, target_type: str = "auto") -
     Updates the DB and publishes WebSocket events throughout.
     """
     # Configure global proxies for standard HTTP libraries (maigret, holehe, scrapers)
-    if PROXY_URL:
-        os.environ["HTTP_PROXY"] = PROXY_URL
-        os.environ["HTTPS_PROXY"] = PROXY_URL
-        logger.info(f"[Scan {scan_id}] Configured global proxy environment: {PROXY_URL}")
-        log_scan_message(scan_id, f"⚙️ Proxy global configuré : {PROXY_URL}")
+    from app.utils.settings import get_setting
+    proxy_url = get_setting("proxy_url")
+    if proxy_url:
+        os.environ["HTTP_PROXY"] = proxy_url
+        os.environ["HTTPS_PROXY"] = proxy_url
+        logger.info(f"[Scan {scan_id}] Configured global proxy environment: {proxy_url}")
+        log_scan_message(scan_id, f"⚙️ Proxy global configuré : {proxy_url}")
+    else:
+        os.environ.pop("HTTP_PROXY", None)
+        os.environ.pop("HTTPS_PROXY", None)
 
     # Detect type if auto
     if target_type == "auto":
@@ -132,6 +139,10 @@ def run_scan(self: Task, scan_id: str, target: str, target_type: str = "auto") -
             all_results = _run_email_scan(scan_id, normalized, aggregator)
         elif target_type == "phone":
             all_results = _run_phone_scan(scan_id, normalized, aggregator)
+        elif target_type == "ip":
+            all_results = _run_ip_scan(scan_id, normalized, aggregator)
+        elif target_type == "domain":
+            all_results = _run_domain_scan(scan_id, normalized, aggregator)
         else:
             # Unknown — try username scan
             all_results = _run_username_scan(scan_id, normalized, aggregator)
@@ -182,6 +193,9 @@ def _run_username_scan(scan_id: str, username: str, aggregator: DataAggregator) 
     sherlock_callback = _make_progress_callback(scan_id, "sherlock")
     wmn_callback = _make_progress_callback(scan_id, "whatsmyname")
 
+    from app.utils.settings import get_setting
+    proxy_url = get_setting("proxy_url")
+
     maigret_task = run_maigret(
         username=username,
         scan_id=scan_id,
@@ -192,13 +206,13 @@ def _run_username_scan(scan_id: str, username: str, aggregator: DataAggregator) 
         scan_id=scan_id,
         existing_urls=None,
         progress_callback=_async_wrap(sherlock_callback),
-        proxy_url=PROXY_URL,
+        proxy_url=proxy_url,
     )
     wmn_task = run_whatsmyname(
         username=username,
         scan_id=scan_id,
         progress_callback=_async_wrap(wmn_callback),
-        proxy_url=PROXY_URL,
+        proxy_url=proxy_url,
     )
 
     # 2. Run concurrently and await all
@@ -283,6 +297,9 @@ def _run_email_scan(scan_id: str, email: str, aggregator: DataAggregator) -> Dic
     ghunt_callback = _make_progress_callback(scan_id, "ghunt")
     hibp_callback = _make_progress_callback(scan_id, "hibp")
 
+    from app.utils.settings import get_setting
+    proxy_url = get_setting("proxy_url")
+
     holehe_task = run_holehe(
         email=email,
         scan_id=scan_id,
@@ -297,7 +314,7 @@ def _run_email_scan(scan_id: str, email: str, aggregator: DataAggregator) -> Dic
         email=email,
         scan_id=scan_id,
         progress_callback=_async_wrap(hibp_callback),
-        proxy_url=PROXY_URL,
+        proxy_url=proxy_url,
     )
 
     # 2. Run concurrently and await all
@@ -407,6 +424,50 @@ def _run_phone_scan(scan_id: str, phone: str, aggregator: DataAggregator) -> Dic
     _run_async(_async_wrap(callback)("phone_lookup", "completed", 1 if metadata.get("valid") else 0, 1))
 
     return {"phone_lookup": results}
+
+
+def _run_ip_scan(scan_id: str, ip: str, aggregator: DataAggregator) -> Dict:
+    """Run IP lookup: geolocation and proxy/VPN detection."""
+    from app.workers.ip_worker import run_ip_scan
+    from app.utils.settings import get_setting
+
+    proxy_url = get_setting("proxy_url")
+    callback = _make_progress_callback(scan_id, "ip_lookup")
+    
+    # Run task
+    result = _run_async(
+        run_ip_scan(
+            ip=ip,
+            scan_id=scan_id,
+            progress_callback=_async_wrap(callback),
+            proxy_url=proxy_url,
+        )
+    )
+    
+    aggregator.ingest_tool_results("ip_lookup", result)
+    return {"ip_lookup": result}
+
+
+def _run_domain_scan(scan_id: str, domain: str, aggregator: DataAggregator) -> Dict:
+    """Run Domain lookup: DNS records, RDAP/Whois, and subdomains."""
+    from app.workers.domain_worker import run_domain_scan
+    from app.utils.settings import get_setting
+
+    proxy_url = get_setting("proxy_url")
+    callback = _make_progress_callback(scan_id, "domain_lookup")
+    
+    # Run task
+    result = _run_async(
+        run_domain_scan(
+            domain=domain,
+            scan_id=scan_id,
+            progress_callback=_async_wrap(callback),
+            proxy_url=proxy_url,
+        )
+    )
+    
+    aggregator.ingest_tool_results("domain_lookup", result)
+    return {"domain_lookup": result}
 
 
 def _send_webhooks(target: str, target_type: str, summary: dict):

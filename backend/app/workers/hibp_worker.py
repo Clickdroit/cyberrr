@@ -11,9 +11,6 @@ from app.utils.scan_logger import log_scan_message
 
 logger = logging.getLogger(__name__)
 
-HIBP_API_KEY = os.getenv("HIBP_API_KEY", "")
-
-
 async def run_hibp(
     email: str,
     scan_id: str,
@@ -26,12 +23,15 @@ async def run_hibp(
     if progress_callback:
         await progress_callback("hibp", "running", 0, 1)
 
+    from app.utils.settings import get_setting
+    hibp_api_key = get_setting("hibp_api_key")
+
     breaches = []
-    api_configured = bool(HIBP_API_KEY)
+    api_configured = bool(hibp_api_key)
 
     if api_configured:
         headers = {
-            "hibp-api-key": HIBP_API_KEY,
+            "hibp-api-key": hibp_api_key,
             "user-agent": "OSINT-Hub-Investigation-App"
         }
         url = f"https://haveibeenpwned.com/api/v3/breachedaccount/{email}?truncateResponse=false"

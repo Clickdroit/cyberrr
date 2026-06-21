@@ -187,6 +187,12 @@ class DataAggregator:
         self.breaches: List[Dict[str, Any]] = []
         self.phone_metadata: Dict[str, Any] = {}
 
+        # V3 additions
+        self.ip_metadata: Dict[str, Any] = {}
+        self.domain_dns: Dict[str, Any] = {}
+        self.domain_whois: Dict[str, Any] = {}
+        self.domain_subdomains: List[Dict[str, Any]] = []
+
     def ingest_tool_results(self, tool_name: str, results: Dict[str, Any]):
         """
         Process raw results from a tool and update internal counters.
@@ -200,6 +206,21 @@ class DataAggregator:
         # 2. Handle phone metadata
         if tool_name == "phone_lookup" and "metadata" in results:
             self.phone_metadata = results.get("metadata", {})
+            return
+
+        # Handle IP metadata
+        if tool_name == "ip_lookup" and "metadata" in results:
+            self.ip_metadata = results.get("metadata", {})
+            city = self.ip_metadata.get("city")
+            if city and city != "Inconnu":
+                self.location_counter[city.title()] += 2
+            return
+
+        # Handle Domain metadata
+        if tool_name == "domain_lookup":
+            self.domain_dns = results.get("dns_records", {})
+            self.domain_whois = results.get("whois_data", {})
+            self.domain_subdomains = results.get("subdomains", [])
             return
 
         # 3. Handle accounts/profiles list
@@ -360,4 +381,8 @@ class DataAggregator:
             "timeline": sorted_timeline,
             "breaches": self.breaches,
             "phone_metadata": self.phone_metadata,
+            "ip_metadata": self.ip_metadata,
+            "domain_dns": self.domain_dns,
+            "domain_whois": self.domain_whois,
+            "domain_subdomains": self.domain_subdomains,
         }

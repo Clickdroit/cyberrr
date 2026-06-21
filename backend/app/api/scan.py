@@ -11,10 +11,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import Scan, ScanResult, get_db
-from app.schemas import ScanListItem, ScanRequest, ScanResponse, ToolStatusSchema, ScanMetadataUpdate
+from app.schemas import ScanListItem, ScanRequest, ScanResponse, ToolStatusSchema, ScanMetadataUpdate, SettingsUpdate, SettingsResponse
 from app.utils.input_detector import detect_input_type
 from app.workers.orchestrator import run_scan
 from app.utils.scan_logger import get_scan_logs
+from app.utils.settings import load_settings, save_settings
 
 router = APIRouter(prefix="/api", tags=["scans"])
 
@@ -51,6 +52,8 @@ async def create_scan(
         "username": ["maigret", "sherlock", "whatsmyname", "scraper"],
         "email": ["holehe", "ghunt", "hibp", "scraper"],
         "phone": ["phone_lookup"],
+        "ip": ["ip_lookup"],
+        "domain": ["domain_lookup"],
         "unknown": ["maigret", "sherlock", "whatsmyname", "scraper"],
     }
     for tool_name in tools_for_type.get(detected_type, ["maigret", "sherlock"]):
@@ -231,4 +234,50 @@ async def get_logs(scan_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Scan not found")
     
     return get_scan_logs(scan_id)
+
+
+@router.get("/settings", response_model=SettingsResponse)
+async def get_settings_endpoint():
+    """Retrieve active settings configuration (sensitive details masked)."""
+    try:
+        settings = load_settings()
+        return SettingsResponse(
+            hibp_api_key_configured=bool(settings.get("hibp_api_key")),
+            proxy_url=settings.get("proxy_url", ""),
+            ghunt_cookies_configured=bool(settings.get("ghunt_cookies")),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/settings", status_code=200)
+async def update_settings_endpoint(payload: SettingsUpdate):
+    """Update settings configuration."""
+    try:
+        current = load_settings()
+        
+        # Merge payload values
+        updated = {
+            "hibp_api_key": current.get("hibp_api_key", ""),
+            "proxy_url": current.get("proxy_url", ""),
+            "ghunt_cookies": current.get("ghunt_cookies", "")
+        }
+        
+        if payload.hibp_api_key is not None:
+            # If user sent placeholder/mask, keep current
+            if payload.hibp_api_key not in ("keyset", "****", "true"):
+                updated["hibp_api_key"] = payload.hibp_api_key.strip()
+        
+        if payload.proxy_url is not None:
+            updated["proxy_url"] = payload.proxy_url.strip()
+            
+        if payload.ghunt_cookies is not None:
+            # If placeholder, keep current
+            if payload.ghunt_cookies not in ("keyset", "****", "true"):
+                updated["ghunt_cookies"] = payload.ghunt_cookies.strip()
+                
+        save_settings(updated)
+        return {"success": True, "message": "Paramètres mis à jour avec succès"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 

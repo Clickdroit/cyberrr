@@ -11,7 +11,7 @@ try:
 except ImportError:
     PHONENUMBERS_AVAILABLE = False
 
-InputType = Literal["username", "email", "phone", "unknown"]
+InputType = Literal["username", "email", "phone", "ip", "domain", "unknown"]
 
 # Email regex (RFC 5322 simplified)
 EMAIL_RE = re.compile(
@@ -23,16 +23,32 @@ PHONE_RE = re.compile(
     r"^[\+]?[(]?[0-9]{1,4}[)]?[-\s\./0-9]{6,14}$"
 )
 
+# IPv4 regex
+IP_RE = re.compile(
+    r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+)
+
+# Domain name regex
+DOMAIN_RE = re.compile(
+    r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$"
+)
+
 
 def detect_input_type(target: str) -> InputType:
     """
     Detect the type of the given target string.
-    Order: email > phone > username.
+    Order: email > ip > domain > phone > username.
     """
     target = target.strip()
 
     if EMAIL_RE.match(target):
         return "email"
+
+    if IP_RE.match(target):
+        return "ip"
+
+    if DOMAIN_RE.match(target):
+        return "domain"
 
     if PHONE_RE.match(target.replace(" ", "").replace("-", "")):
         if PHONENUMBERS_AVAILABLE:

@@ -48,7 +48,7 @@ class Scan(Base):
     id = Column(String(36), primary_key=True)  # UUID
     target = Column(String(512), nullable=False, index=True)
     target_type = Column(
-        Enum("username", "email", "phone", "unknown", name="target_type_enum"),
+        Enum("username", "email", "phone", "ip", "domain", "unknown", name="target_type_enum"),
         default="unknown",
     )
     status = Column(

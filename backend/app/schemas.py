@@ -101,3 +101,15 @@ class WSEvent(BaseModel):
     event: str  # tool_update | scan_complete | scan_failed | progress
     scan_id: str
     data: Dict[str, Any] = {}
+
+
+class SettingsUpdate(BaseModel):
+    hibp_api_key: Optional[str] = None
+    proxy_url: Optional[str] = None
+    ghunt_cookies: Optional[str] = None
+
+
+class SettingsResponse(BaseModel):
+    hibp_api_key_configured: bool
+    proxy_url: str
+    ghunt_cookies_configured: bool

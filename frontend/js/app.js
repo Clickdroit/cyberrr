@@ -56,7 +56,7 @@ function toast(message, type = 'info', duration = 3500) {
 
 // ── View Router ───────────────────────────────────────────────────────────
 function showView(viewName) {
-  ['view-home', 'view-scanning', 'view-results', 'view-history', 'view-compare'].forEach(id => {
+  ['view-home', 'view-scanning', 'view-results', 'view-history', 'view-compare', 'view-settings'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.classList.add('hidden');
   });
@@ -429,6 +429,97 @@ function renderProfileTab(summary) {
     `;
   }
 
+  // Render IP lookup metadata if valid
+  let ipHtml = '';
+  if (summary.ip_metadata && summary.ip_metadata.valid) {
+    const meta = summary.ip_metadata;
+    ipHtml = `
+      <div class="glass-card p-5 mb-6">
+        <div class="text-xs uppercase tracking-widest text-cyan mb-3 flex items-center gap-2 font-bold" style="color: var(--accent-cyan);">
+          <span>📍</span> Détails de l'Adresse IP (${meta.ip})
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm mt-3">
+          <div><span class="text-secondary">Localisation :</span> <span class="font-semibold text-white">${meta.city}, ${meta.region}, ${meta.country} (${meta.country_code})</span></div>
+          <div><span class="text-secondary">Timezone :</span> <span class="font-mono text-white">${meta.timezone}</span></div>
+          <div><span class="text-secondary">Fournisseur d'accès (ISP) :</span> <span class="font-semibold text-white">${meta.isp}</span></div>
+          <div><span class="text-secondary">AS / Organisation :</span> <span class="font-mono text-white">${meta.asn} (${meta.org})</span></div>
+          <div><span class="text-secondary">Coordonnées :</span> <span class="font-mono text-white">${meta.lat}, ${meta.lon}</span></div>
+          <div class="flex gap-4 mt-2 col-span-1 sm:col-span-2">
+            <span class="tag-badge ${meta.is_proxy ? 'compare-tag' : 'tag-disabled'}" style="${meta.is_proxy ? 'background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: #ef4444;' : ''}">
+              ${meta.is_proxy ? '⚠️ Proxy/VPN Détecté' : '✓ Connexion Résidentielle'}
+            </span>
+            <span class="tag-badge ${meta.is_hosting ? 'compare-tag' : 'tag-disabled'}" style="${meta.is_hosting ? 'background: rgba(167, 139, 250, 0.1); border-color: rgba(167, 139, 250, 0.3); color: #a78bfa;' : ''}">
+              ${meta.is_hosting ? '💻 Hébergeur/Datacenter' : '🏠 Client'}
+            </span>
+            <span class="tag-badge ${meta.is_mobile ? 'compare-tag' : 'tag-disabled'}">
+              ${meta.is_mobile ? '📱 Réseau Mobile' : '🔌 Réseau Fixe'}
+            </span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Render Domain lookup metadata if present
+  let domainHtml = '';
+  if (summary.domain_whois && !summary.domain_whois.error) {
+    const whois = summary.domain_whois;
+    const dns = summary.domain_dns || {};
+    const subdomains = summary.domain_subdomains || [];
+    
+    domainHtml = `
+      <div class="glass-card p-5 mb-6">
+        <div class="text-xs uppercase tracking-widest text-cyan mb-3 flex items-center gap-2 font-bold" style="color: var(--accent-cyan);">
+          <span>🌐</span> Informations de Domaine (Whois / RDAP)
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm mt-3">
+          <div><span class="text-secondary">Registrar :</span> <span class="font-semibold text-white">${whois.registrar}</span></div>
+          <div><span class="text-secondary">Date de création :</span> <span class="font-mono text-white">${whois.created_at}</span></div>
+          <div><span class="text-secondary">Date d'expiration :</span> <span class="font-mono text-white">${whois.expires_at}</span></div>
+          <div><span class="text-secondary">Serveurs DNS (NS) :</span> <span class="font-mono text-white">${(whois.nameservers || []).join(', ') || 'Aucun'}</span></div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        <!-- Enregistrements DNS -->
+        <div class="glass-card p-5">
+          <div class="text-xs uppercase tracking-widest text-secondary mb-3">📋 Enregistrements DNS Principaux</div>
+          <div class="flex flex-col gap-3 text-xs font-mono">
+            <div>
+              <span class="text-cyan font-bold block mb-1">A (IPv4) :</span>
+              <div class="text-white">${(dns.A || []).join('<br/>') || 'Aucun'}</div>
+            </div>
+            <div>
+              <span class="text-cyan font-bold block mb-1">AAAA (IPv6) :</span>
+              <div class="text-white">${(dns.AAAA || []).join('<br/>') || 'Aucun'}</div>
+            </div>
+            <div>
+              <span class="text-purple-400 font-bold block mb-1">MX (Serveurs Mail) :</span>
+              <div class="text-white">${(dns.MX || []).join('<br/>') || 'Aucun'}</div>
+            </div>
+            <div>
+              <span class="text-yellow-400 font-bold block mb-1">TXT (SPF / Validation) :</span>
+              <div class="text-white">${(dns.TXT || []).map(t => typeof t === 'object' ? JSON.stringify(t) : t).join('<br/>') || 'Aucun'}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sous-domaines découverts -->
+        <div class="glass-card p-5">
+          <div class="text-xs uppercase tracking-widest text-secondary mb-3">📍 Sous-domaines Découverts (${subdomains.length})</div>
+          <div class="max-h-60 overflow-y-auto pr-2 text-xs font-mono flex flex-col gap-2">
+            ${subdomains.map(sub => `
+              <div class="p-2 rounded bg-black/40 border border-white/5 flex flex-col gap-1">
+                <span class="text-cyan font-bold">${sub.subdomain}</span>
+                <span class="text-secondary">IP: ${sub.ips.join(', ')}</span>
+              </div>
+            `).join('') || '<div class="text-secondary text-center py-6">Aucun sous-domaine commun détecté</div>'}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   // Render HaveIBeenPwned leaks if any
   let breachesHtml = '';
   if (summary.breaches && summary.breaches.length > 0) {
@@ -561,6 +652,12 @@ function renderProfileTab(summary) {
 
     <!-- Phone Info (Conditional) -->
     ${phoneHtml}
+
+    <!-- IP Info (Conditional) -->
+    ${ipHtml}
+
+    <!-- Domain Info (Conditional) -->
+    ${domainHtml}
 
     <!-- HaveIBeenPwned Leaks (Conditional) -->
     ${breachesHtml}
@@ -919,6 +1016,7 @@ function init() {
       const view = btn.dataset.nav;
       if (view === 'history') loadHistory();
       if (view === 'compare') loadCompareDropdowns();
+      if (view === 'settings') loadSettingsView();
       showView(view);
     });
   });
@@ -944,6 +1042,23 @@ function init() {
       return;
     }
     window.open(`/api/scan/${State.currentScan.id}/logs`, '_blank');
+  });
+
+  // Download JSON button
+  document.getElementById('download-json-btn')?.addEventListener('click', () => {
+    if (!State.currentScan || !State.currentScan.id) {
+      toast('Aucune recherche sélectionnée', 'error');
+      return;
+    }
+    window.open(`/api/scan/${State.currentScan.id}`, '_blank');
+  });
+
+  // Settings form listener
+  document.getElementById('settings-form')?.addEventListener('submit', handleSaveSettings);
+
+  // Pivot modal cancel button
+  document.getElementById('pivot-cancel-btn')?.addEventListener('click', () => {
+    document.getElementById('pivot-modal').classList.add('hidden');
   });
 
   // Check auth state
@@ -1067,6 +1182,19 @@ function renderRelationGraph(summary) {
     edges.push({ from: 'target', to: nodeId, dashes: true, color: '#a78bfa', opacity: 0.5 });
   });
 
+  const emails = (summary.emails_found || []).slice(0, 4);
+  emails.forEach((email, idx) => {
+    const nodeId = `email-${idx}`;
+    nodes.push({
+      id: nodeId,
+      label: `📧 ${email}`,
+      shape: 'box',
+      font: { color: '#10b981', size: 10 },
+      color: { border: 'rgba(16, 185, 129, 0.3)', background: 'rgba(16, 185, 129, 0.05)' }
+    });
+    edges.push({ from: 'target', to: nodeId, dashes: true, color: '#10b981', opacity: 0.5 });
+  });
+
   const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
   const options = {
     physics: {
@@ -1087,6 +1215,29 @@ function renderRelationGraph(summary) {
 
   if (relationNetwork) relationNetwork.destroy();
   relationNetwork = new vis.Network(container, data, options);
+
+  // Click on graph node to trigger pivot scan
+  relationNetwork.on('click', function (params) {
+    if (params.nodes.length > 0) {
+      const nodeId = params.nodes[0];
+      let pivotValue = null;
+      let pivotType = 'auto';
+
+      if (nodeId.startsWith('fn-')) {
+        const idx = parseInt(nodeId.split('-')[1]);
+        pivotValue = firstnames[idx];
+        pivotType = 'username';
+      } else if (nodeId.startsWith('email-')) {
+        const idx = parseInt(nodeId.split('-')[1]);
+        pivotValue = emails[idx];
+        pivotType = 'email';
+      }
+
+      if (pivotValue) {
+        showPivotModal(pivotValue, pivotType);
+      }
+    }
+  });
 }
 
 // ── Metadata Save REST ──────────────────────────────────────────────────────
@@ -1273,7 +1424,105 @@ function renderComparison(scanA, scanB) {
 // ── Print date logic ───────────────────────────────────────────────────────
 window.addEventListener('beforeprint', () => {
   const dateEl = document.getElementById('print-date');
-  if (dateEl) dateEl.textContent = new Date().toLocaleString();
+  if (dateEl) dateEl.textContent = new Date().toLocaleString('fr-FR');
+});
+
+// ── Settings View Management ────────────────────────────────────────────────
+async function loadSettingsView() {
+  const hibpInput = document.getElementById('setting-hibp-key');
+  const proxyInput = document.getElementById('setting-proxy-url');
+  const cookiesInput = document.getElementById('setting-ghunt-cookies');
+  
+  if (!hibpInput || !proxyInput || !cookiesInput) return;
+  
+  // Show loading placeholders
+  hibpInput.placeholder = "Chargement...";
+  proxyInput.placeholder = "Chargement...";
+  cookiesInput.placeholder = "Chargement...";
+  
+  const data = await API.get('/api/settings');
+  if (data) {
+    proxyInput.value = data.proxy_url || '';
+    proxyInput.placeholder = "http://user:pass@host:port";
+    
+    if (data.hibp_api_key_configured) {
+      hibpInput.value = '****';
+      hibpInput.placeholder = "Clé configurée (saisir pour écraser)";
+    } else {
+      hibpInput.value = '';
+      hibpInput.placeholder = "Saisir la clé d'API (laisser vide pour la simulation)";
+    }
+    
+    if (data.ghunt_cookies_configured) {
+      cookiesInput.value = '****';
+      cookiesInput.placeholder = "Cookies configurés (saisir pour écraser)";
+    } else {
+      cookiesInput.value = '';
+      cookiesInput.placeholder = '{ "cookies": { ... } }';
+    }
+  } else {
+    toast('Erreur lors du chargement des paramètres', 'error');
+  }
+}
+
+async function handleSaveSettings(e) {
+  e.preventDefault();
+  const hibpKey = document.getElementById('setting-hibp-key').value;
+  const proxyUrl = document.getElementById('setting-proxy-url').value;
+  const ghuntCookies = document.getElementById('setting-ghunt-cookies').value;
+  
+  const btn = document.getElementById('save-settings-btn');
+  btn.disabled = true;
+  btn.textContent = 'Enregistrement...';
+  
+  const payload = {};
+  if (hibpKey !== '****') payload.hibp_api_key = hibpKey;
+  payload.proxy_url = proxyUrl;
+  if (ghuntCookies !== '****') payload.ghunt_cookies = ghuntCookies;
+  
+  const res = await API.post('/api/settings', payload);
+  btn.disabled = false;
+  btn.textContent = '💾 Enregistrer la configuration';
+  
+  if (res.ok) {
+    toast('Configuration enregistrée avec succès', 'success');
+    loadSettingsView(); // Refresh inputs
+  } else {
+    toast('Erreur lors de l\'enregistrement', 'error');
+  }
+}
+
+// ── Graph Pivot Modal ───────────────────────────────────────────────────────
+let currentPivotTarget = null;
+let currentPivotType = 'auto';
+
+function showPivotModal(value, type) {
+  currentPivotTarget = value;
+  currentPivotType = type;
+  
+  const display = document.getElementById('pivot-target-display');
+  if (display) display.textContent = `${value} (${type === 'username' ? 'Pseudo' : type === 'email' ? 'Email' : type})`;
+  
+  const modal = document.getElementById('pivot-modal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+// Bind pivot confirmation
+document.getElementById('pivot-confirm-btn')?.addEventListener('click', () => {
+  document.getElementById('pivot-modal').classList.add('hidden');
+  if (currentPivotTarget) {
+    const searchInput = document.getElementById('search-input');
+    if (searchInput) searchInput.value = currentPivotTarget;
+    
+    State.currentTypeFilter = currentPivotType;
+    document.querySelectorAll('[data-type]').forEach(b => {
+      b.classList.toggle('active', b.dataset.type === currentPivotType);
+    });
+    updateTypeIndicator(currentPivotType);
+    
+    showView('home');
+    handleSearch(new Event('submit'));
+  }
 });
 
 document.addEventListener('DOMContentLoaded', init);
@@ -1283,3 +1532,4 @@ window.deleteScan = deleteScan;
 window.viewHistoryScan = viewHistoryScan;
 window.saveScanMetadata = saveScanMetadata;
 window.runComparison = runComparison;
+window.loadSettingsView = loadSettingsView;
