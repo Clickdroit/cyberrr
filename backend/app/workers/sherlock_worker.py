@@ -44,7 +44,7 @@ async def run_sherlock(
     existing_urls = existing_urls or set()
     normalized_existing = {_normalize_url(u) for u in existing_urls}
 
-    output_file = os.path.join(REPORTS_DIR, f"sherlock_{scan_id}.json")
+    output_file = os.path.join(REPORTS_DIR, f"sherlock_{scan_id}.csv")
     os.makedirs(REPORTS_DIR, exist_ok=True)
 
     if progress_callback:
@@ -61,7 +61,7 @@ async def run_sherlock(
         cmd = [
             *sherlock_cmd,
             username,
-            "--json",
+            "--csv",
             "--output", output_file,
             "--timeout", "10",
             "--print-found",
@@ -94,26 +94,47 @@ async def run_sherlock(
             stderr_str = stderr_bytes.decode("utf-8", errors="replace").strip()
             logger.error(f"Sherlock exited with code {proc.returncode}. Stderr: {stderr_str}")
 
-        # Parse JSON output file
+        # Parse CSV output file
         if os.path.exists(output_file):
-            with open(output_file, "r", encoding="utf-8") as f:
-                raw = json.load(f)
+            import csv
+            with open(output_file, "r", encoding="utf-8", newline="") as f:
+                reader = csv.reader(f)
+                try:
+                    header = next(reader)
+                except StopIteration:
+                    header = []
 
-            for site_name, info in raw.items():
-                if info.get("status") == "Claimed":
-                    url = info.get("url_user", "")
-                    norm = _normalize_url(url)
-                    # Skip if already found by Maigret
-                    if norm in normalized_existing:
-                        continue
+                # Default indices if header matches ["username", "name", "url_main", "url_user", "exists"]
+                name_idx = 1
+                url_user_idx = 3
+                exists_idx = 4
 
-                    accounts.append({
-                        "site_name": site_name,
-                        "url": url,
-                        "metadata": {},
-                        "tags": [],
-                    })
-                    normalized_existing.add(norm)
+                if header:
+                    try:
+                        name_idx = header.index("name")
+                        url_user_idx = header.index("url_user")
+                        exists_idx = header.index("exists")
+                    except ValueError:
+                        pass
+
+                for row in reader:
+                    if len(row) > max(name_idx, url_user_idx, exists_idx):
+                        status = row[exists_idx].strip()
+                        if status.lower() == "claimed":
+                            site_name = row[name_idx].strip()
+                            url = row[url_user_idx].strip()
+                            norm = _normalize_url(url)
+                            # Skip if already found by Maigret
+                            if norm in normalized_existing:
+                                continue
+
+                            accounts.append({
+                                "site_name": site_name,
+                                "url": url,
+                                "metadata": {},
+                                "tags": [],
+                            })
+                            normalized_existing.add(norm)
 
             # Cleanup
             try:
