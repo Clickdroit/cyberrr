@@ -10,6 +10,8 @@ from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
+from app.utils.scan_logger import log_scan_message
+
 REPORTS_DIR = os.getenv("REPORTS_DIR", "/data/reports")
 
 
@@ -118,11 +120,12 @@ async def run_maigret(
             "sites_checked": total,
         }
 
-    except ImportError:
-        logger.warning("Maigret not installed — skipping")
+    except ImportError as e:
+        logger.warning(f"Maigret not installed or import error: {e}", exc_info=True)
+        log_scan_message(scan_id, f"⚠️ Maigret absent ou erreur d'import : {e}")
         if progress_callback:
             await progress_callback("maigret", "skipped", 0, 0)
-        return _empty_result("maigret not installed")
+        return _empty_result(f"maigret not installed or import error: {e}")
 
     except Exception as e:
         logger.error(f"Maigret error: {e}", exc_info=True)

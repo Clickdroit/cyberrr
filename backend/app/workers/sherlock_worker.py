@@ -81,9 +81,12 @@ async def run_sherlock(
 
 
         found_count = 0
+        stdout_lines = []
         # Stream stdout to track progress in real time
         async for line in proc.stdout:
             decoded = line.decode("utf-8", errors="replace").strip()
+            if decoded:
+                stdout_lines.append(decoded)
             if "[+]" in decoded:
                 found_count += 1
                 if found_count % 20 == 0 and progress_callback:
@@ -93,8 +96,13 @@ async def run_sherlock(
         if proc.returncode != 0:
             stderr_bytes = await proc.stderr.read()
             stderr_str = stderr_bytes.decode("utf-8", errors="replace").strip()
-            logger.error(f"Sherlock exited with code {proc.returncode}. Stderr: {stderr_str}")
-            log_scan_message(scan_id, f"⚠️ Sherlock erreur (code {proc.returncode}) : {stderr_str[:300]}")
+            
+            error_details = stderr_str
+            if not error_details and stdout_lines:
+                error_details = " | ".join(stdout_lines[-3:])
+            
+            logger.error(f"Sherlock exited with code {proc.returncode}. Details: {error_details}")
+            log_scan_message(scan_id, f"⚠️ Sherlock erreur (code {proc.returncode}) : {error_details[:300]}")
 
         # Parse CSV output file
         if os.path.exists(output_file):
