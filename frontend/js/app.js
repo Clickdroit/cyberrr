@@ -937,6 +937,15 @@ function init() {
   // Compare run button
   document.getElementById('compare-run-btn')?.addEventListener('click', runComparison);
 
+  // Download logs button
+  document.getElementById('download-logs-btn')?.addEventListener('click', () => {
+    if (!State.currentScan || !State.currentScan.id) {
+      toast('Aucune recherche sélectionnée', 'error');
+      return;
+    }
+    window.open(`/api/scan/${State.currentScan.id}/logs`, '_blank');
+  });
+
   // Check auth state
   checkAuth();
 }

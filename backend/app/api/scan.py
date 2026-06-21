@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +14,7 @@ from app.database import Scan, ScanResult, get_db
 from app.schemas import ScanListItem, ScanRequest, ScanResponse, ToolStatusSchema, ScanMetadataUpdate
 from app.utils.input_detector import detect_input_type
 from app.workers.orchestrator import run_scan
+from app.utils.scan_logger import get_scan_logs
 
 router = APIRouter(prefix="/api", tags=["scans"])
 
@@ -218,4 +220,15 @@ async def delete_scan(scan_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Scan not found")
     await db.delete(scan)
     await db.commit()
+
+
+@router.get("/scan/{scan_id}/logs", response_class=PlainTextResponse)
+async def get_logs(scan_id: str, db: AsyncSession = Depends(get_db)):
+    """Retrieve plain text logs for a specific scan."""
+    result = await db.execute(select(Scan).where(Scan.id == scan_id))
+    scan = result.scalar_one_or_none()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    
+    return get_scan_logs(scan_id)
 

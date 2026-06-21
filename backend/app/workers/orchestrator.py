@@ -14,6 +14,7 @@ from app.celery_app import celery_app
 from app.utils.aggregator import DataAggregator
 from app.utils.input_detector import detect_input_type, normalize_target
 from app.utils.redis_pubsub import publish_event_sync
+from app.utils.scan_logger import log_scan_message
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,16 @@ def _publish(scan_id: str, event: str, data: dict):
     """Helper to publish event synchronously."""
     try:
         publish_event_sync(scan_id, event, data)
+        # Log to file
+        if event == "scan_started":
+            log_scan_message(scan_id, f"🔍 Investigation démarrée — Cible: {data.get('target')} ({data.get('target_type')})")
+        elif event == "scan_complete":
+            summary = data.get("summary", {})
+            log_scan_message(scan_id, f"✅ Scan terminé — {summary.get('total_accounts', 0)} comptes trouvés")
+        elif event == "scan_failed":
+            log_scan_message(scan_id, f"❌ Scan échoué: {data.get('error')}")
+        elif event == "email_discovered":
+            log_scan_message(scan_id, f"📧 Email découvert: {data.get('email')} (via {data.get('source')})")
     except Exception as e:
         logger.warning(f"Could not publish event: {e}")
 
@@ -42,6 +53,24 @@ def _make_progress_callback(scan_id: str, tool_name: str):
             "sites_checked": total,
             "timestamp": datetime.utcnow().isoformat(),
         })
+        # Log update to file
+        emoji = "🤖"
+        if tool == "maigret": emoji = "🔭"
+        elif tool == "sherlock": emoji = "🕵️"
+        elif tool == "whatsmyname": emoji = "🔍"
+        elif tool == "hibp": emoji = "🔑"
+        elif tool == "phone_lookup": emoji = "📞"
+        
+        status_map = {
+            "pending": "En attente",
+            "running": "En cours",
+            "completed": "Terminé",
+            "failed": "Échec",
+            "skipped": "Non configuré/Passé"
+        }
+        status_fr = status_map.get(status, status)
+        
+        log_scan_message(scan_id, f"{emoji} {tool} : {status_fr} ({found}/{total} vérifiés)")
     return callback
 
 
@@ -72,6 +101,7 @@ def run_scan(self: Task, scan_id: str, target: str, target_type: str = "auto") -
         os.environ["HTTP_PROXY"] = PROXY_URL
         os.environ["HTTPS_PROXY"] = PROXY_URL
         logger.info(f"[Scan {scan_id}] Configured global proxy environment: {PROXY_URL}")
+        log_scan_message(scan_id, f"⚙️ Proxy global configuré : {PROXY_URL}")
 
     # Detect type if auto
     if target_type == "auto":

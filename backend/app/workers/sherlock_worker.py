@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 from typing import Any, Dict, List, Optional, Set
+from app.utils.scan_logger import log_scan_message
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,7 @@ async def run_sherlock(
             stderr_bytes = await proc.stderr.read()
             stderr_str = stderr_bytes.decode("utf-8", errors="replace").strip()
             logger.error(f"Sherlock exited with code {proc.returncode}. Stderr: {stderr_str}")
+            log_scan_message(scan_id, f"⚠️ Sherlock erreur (code {proc.returncode}) : {stderr_str[:300]}")
 
         # Parse CSV output file
         if os.path.exists(output_file):
