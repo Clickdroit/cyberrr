@@ -57,6 +57,7 @@ async def run_maigret(
         results = await maigret_search(
             username=username,
             site_dict=sites,
+            logger=logger,
             is_parsing_enabled=True,
             timeout=10,
         )

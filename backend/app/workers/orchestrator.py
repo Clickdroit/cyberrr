@@ -70,7 +70,10 @@ def _make_progress_callback(scan_id: str, tool_name: str):
         }
         status_fr = status_map.get(status, status)
         
-        log_scan_message(scan_id, f"{emoji} {tool} : {status_fr} ({found}/{total} vérifiés)")
+        if status in ("completed", "running"):
+            log_scan_message(scan_id, f"{emoji} {tool} : {status_fr} ({found} trouvés sur {total} vérifiés)")
+        else:
+            log_scan_message(scan_id, f"{emoji} {tool} : {status_fr}")
     return callback
 
 
