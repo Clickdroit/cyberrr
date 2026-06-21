@@ -57,6 +57,68 @@ async def run_ip_scan(
                     log_scan_message(scan_id, f"📍 IP: Geolocation trouvée : {metadata['city']}, {metadata['country']} (ISP: {metadata['isp']})")
                     if metadata["is_proxy"]:
                         log_scan_message(scan_id, "⚠️ IP Warning: L'adresse IP est détectée comme étant un Proxy/VPN.")
+
+                    # Query Shodan if API key is configured
+                    from app.utils.settings import get_setting
+                    shodan_key = get_setting("shodan_api_key")
+                    shodan_info = {"configured": False}
+                    
+                    if shodan_key:
+                        shodan_info["configured"] = True
+                        log_scan_message(scan_id, "📍 IP: Interrogation passive de la base Shodan...")
+                        try:
+                            shodan_url = f"https://api.shodan.io/shodan/host/{ip}?key={shodan_key}"
+                            async with httpx.AsyncClient(limits=limits, mounts=mounts) as shodan_client:
+                                shodan_resp = await shodan_client.get(shodan_url, timeout=12.0)
+                                if shodan_resp.status_code == 200:
+                                    sdata = shodan_resp.json()
+                                    
+                                    services_list = []
+                                    for item in sdata.get("data", []):
+                                        services_list.append({
+                                            "port": item.get("port"),
+                                            "transport": item.get("transport", "tcp"),
+                                            "product": item.get("product", ""),
+                                            "version": item.get("version", ""),
+                                            "info": item.get("info", "")
+                                        })
+                                        
+                                    shodan_info.update({
+                                        "success": True,
+                                        "ports": sdata.get("ports", []),
+                                        "vulns": sdata.get("vulns", []),
+                                        "os": sdata.get("os", ""),
+                                        "hostnames": sdata.get("hostnames", []),
+                                        "services": services_list
+                                    })
+                                    log_scan_message(scan_id, f"📍 IP: Shodan a détecté {len(sdata.get('ports', []))} ports ouverts et {len(sdata.get('vulns', []))} vulnérabilités.")
+                                elif shodan_resp.status_code == 404:
+                                    shodan_info.update({
+                                        "success": True,
+                                        "ports": [],
+                                        "vulns": [],
+                                        "os": "",
+                                        "hostnames": [],
+                                        "services": []
+                                    })
+                                    log_scan_message(scan_id, "📍 IP: Aucune donnée trouvée pour cette adresse dans Shodan.")
+                                else:
+                                    shodan_info.update({
+                                        "success": False,
+                                        "error": f"API returned status {shodan_resp.status_code}"
+                                    })
+                                    log_scan_message(scan_id, f"⚠️ IP Warning: Échec de l'interrogation Shodan (Code: {shodan_resp.status_code})")
+                        except Exception as se:
+                            logger.error(f"Shodan query failed: {se}")
+                            shodan_info.update({
+                                "success": False,
+                                "error": str(se)
+                            })
+                            log_scan_message(scan_id, f"⚠️ IP Warning: Échec de l'interrogation Shodan : {se}")
+                    else:
+                        log_scan_message(scan_id, "📍 IP: Shodan non configuré (clé API manquante).")
+
+                    metadata["shodan"] = shodan_info
                 else:
                     metadata = {"valid": False, "error": data.get("message", "IP lookup failed")}
             else:

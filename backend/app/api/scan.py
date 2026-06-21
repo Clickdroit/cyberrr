@@ -245,6 +245,7 @@ async def get_settings_endpoint():
             hibp_api_key_configured=bool(settings.get("hibp_api_key")),
             proxy_url=settings.get("proxy_url", ""),
             ghunt_cookies_configured=bool(settings.get("ghunt_cookies")),
+            shodan_api_key_configured=bool(settings.get("shodan_api_key")),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -260,7 +261,8 @@ async def update_settings_endpoint(payload: SettingsUpdate):
         updated = {
             "hibp_api_key": current.get("hibp_api_key", ""),
             "proxy_url": current.get("proxy_url", ""),
-            "ghunt_cookies": current.get("ghunt_cookies", "")
+            "ghunt_cookies": current.get("ghunt_cookies", ""),
+            "shodan_api_key": current.get("shodan_api_key", "")
         }
         
         if payload.hibp_api_key is not None:
@@ -275,6 +277,11 @@ async def update_settings_endpoint(payload: SettingsUpdate):
             # If placeholder, keep current
             if payload.ghunt_cookies not in ("keyset", "****", "true"):
                 updated["ghunt_cookies"] = payload.ghunt_cookies.strip()
+                
+        if payload.shodan_api_key is not None:
+            # If user sent placeholder/mask, keep current
+            if payload.shodan_api_key not in ("keyset", "****", "true"):
+                updated["shodan_api_key"] = payload.shodan_api_key.strip()
                 
         save_settings(updated)
         return {"success": True, "message": "Paramètres mis à jour avec succès"}

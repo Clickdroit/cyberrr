@@ -433,6 +433,113 @@ function renderProfileTab(summary) {
   let ipHtml = '';
   if (summary.ip_metadata && summary.ip_metadata.valid) {
     const meta = summary.ip_metadata;
+    
+    // Render Shodan if present
+    let shodanHtml = '';
+    if (meta.shodan) {
+      const shodan = meta.shodan;
+      const escapeHtml = (str) => {
+        if (!str) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      };
+      if (shodan.configured) {
+        if (shodan.success) {
+          const portsBadges = (shodan.ports || []).map(port => {
+            let badgeStyle = 'background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.3); color: #10b981;';
+            if ([21, 22, 23, 3389, 445, 139].includes(port)) {
+              badgeStyle = 'background: rgba(245, 158, 11, 0.1); border-color: rgba(245, 158, 11, 0.3); color: #f59e0b;';
+            }
+            return `<span class="tag-badge font-mono" style="${badgeStyle}">${port}</span>`;
+          }).join(' ') || '<span class="text-secondary text-xs">Aucun port ouvert détecté</span>';
+
+          const vulnsBadges = (shodan.vulns || []).map(vuln => {
+            return `<a href="https://nvd.nist.gov/vuln/detail/${vuln}" target="_blank" class="tag-badge font-mono hover:underline" style="background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: #ef4444; cursor: pointer;">${vuln}</a>`;
+          }).join(' ') || '<span class="text-xs" style="color: #10b981;">✓ Aucune vulnérabilité CVE répertoriée</span>';
+
+          const servicesRows = (shodan.services || []).map(svc => {
+            return `
+              <tr class="border-b border-white/5 text-xs font-mono">
+                <td class="py-2 text-cyan font-bold" style="color: var(--accent-cyan);">${svc.port}/${svc.transport}</td>
+                <td class="py-2 text-white">${escapeHtml(svc.product) || '<span class="text-dim">Inconnu</span>'} ${escapeHtml(svc.version)}</td>
+                <td class="py-2 text-secondary max-w-xs truncate" title="${escapeHtml(svc.info)}">${escapeHtml(svc.info) || ''}</td>
+              </tr>
+            `;
+          }).join('');
+
+          shodanHtml = `
+            <div class="glass-card p-5 mb-6 border-cyan/10">
+              <div class="text-xs uppercase tracking-widest text-cyan mb-4 flex items-center gap-2 font-bold" style="color: var(--accent-cyan);">
+                <span>🔍</span> Renseignement de ports & vulnérabilités (Shodan)
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm mb-4">
+                <div>
+                  <span class="text-secondary block mb-1">Noms d'hôte (Hostnames) :</span>
+                  <span class="font-mono text-white">${(shodan.hostnames || []).join(', ') || '<span class="text-dim">Aucun</span>'}</span>
+                </div>
+                <div>
+                  <span class="text-secondary block mb-1">Système d'exploitation :</span>
+                  <span class="font-semibold text-white">${shodan.os || '<span class="text-dim">Non détecté</span>'}</span>
+                </div>
+              </div>
+              
+              <div class="mb-4">
+                <span class="text-secondary block mb-2">Ports Ouverts :</span>
+                <div class="flex flex-wrap gap-2">${portsBadges}</div>
+              </div>
+
+              <div class="mb-4">
+                <span class="text-secondary block mb-2">Vulnérabilités associées :</span>
+                <div class="flex flex-wrap gap-2">${vulnsBadges}</div>
+              </div>
+
+              ${servicesRows ? `
+              <div class="mt-4">
+                <span class="text-secondary block mb-2">Services & Bannières :</span>
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left">
+                    <thead>
+                      <tr class="border-b border-white/10 text-xs text-secondary">
+                        <th class="pb-2">Port</th>
+                        <th class="pb-2">Produit</th>
+                        <th class="pb-2">Détails/Bannière</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${servicesRows}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              ` : ''}
+            </div>
+          `;
+        } else {
+          shodanHtml = `
+            <div class="glass-card p-5 mb-6" style="border-color: rgba(239, 68, 68, 0.2);">
+              <div class="text-xs uppercase tracking-widest text-red-400 mb-2 flex items-center gap-2 font-bold">
+                <span>⚠️</span> Shodan API Erreur
+              </div>
+              <p class="text-xs text-secondary">Échec de la récupération des données Shodan : ${shodan.error || 'Erreur inconnue'}</p>
+            </div>
+          `;
+        }
+      } else {
+        shodanHtml = `
+          <div class="glass-card p-5 mb-6">
+            <div class="text-xs uppercase tracking-widest text-secondary mb-2 flex items-center gap-2">
+              <span>ℹ️</span> Renseignements Shodan
+            </div>
+            <p class="text-xs text-secondary">Clé API Shodan non configurée. Configurez-la dans la <a href="#" onclick="switchTab('settings'); return false;" class="text-cyan underline" style="color: var(--accent-cyan);">Configuration</a> pour afficher les ports ouverts et vulnérabilités de cette IP.</p>
+          </div>
+        `;
+      }
+    }
+
     ipHtml = `
       <div class="glass-card p-5 mb-6">
         <div class="text-xs uppercase tracking-widest text-cyan mb-3 flex items-center gap-2 font-bold" style="color: var(--accent-cyan);">
@@ -457,6 +564,7 @@ function renderProfileTab(summary) {
           </div>
         </div>
       </div>
+      ${shodanHtml}
     `;
   }
 
@@ -1432,13 +1540,15 @@ async function loadSettingsView() {
   const hibpInput = document.getElementById('setting-hibp-key');
   const proxyInput = document.getElementById('setting-proxy-url');
   const cookiesInput = document.getElementById('setting-ghunt-cookies');
+  const shodanInput = document.getElementById('setting-shodan-key');
   
-  if (!hibpInput || !proxyInput || !cookiesInput) return;
+  if (!hibpInput || !proxyInput || !cookiesInput || !shodanInput) return;
   
   // Show loading placeholders
   hibpInput.placeholder = "Chargement...";
   proxyInput.placeholder = "Chargement...";
   cookiesInput.placeholder = "Chargement...";
+  shodanInput.placeholder = "Chargement...";
   
   const data = await API.get('/api/settings');
   if (data) {
@@ -1460,6 +1570,14 @@ async function loadSettingsView() {
       cookiesInput.value = '';
       cookiesInput.placeholder = '{ "cookies": { ... } }';
     }
+
+    if (data.shodan_api_key_configured) {
+      shodanInput.value = '****';
+      shodanInput.placeholder = "Clé configurée (saisir pour écraser)";
+    } else {
+      shodanInput.value = '';
+      shodanInput.placeholder = "Saisir la clé d'API Shodan (laisser vide pour désactiver)";
+    }
   } else {
     toast('Erreur lors du chargement des paramètres', 'error');
   }
@@ -1470,6 +1588,7 @@ async function handleSaveSettings(e) {
   const hibpKey = document.getElementById('setting-hibp-key').value;
   const proxyUrl = document.getElementById('setting-proxy-url').value;
   const ghuntCookies = document.getElementById('setting-ghunt-cookies').value;
+  const shodanKey = document.getElementById('setting-shodan-key').value;
   
   const btn = document.getElementById('save-settings-btn');
   btn.disabled = true;
@@ -1479,6 +1598,7 @@ async function handleSaveSettings(e) {
   if (hibpKey !== '****') payload.hibp_api_key = hibpKey;
   payload.proxy_url = proxyUrl;
   if (ghuntCookies !== '****') payload.ghunt_cookies = ghuntCookies;
+  if (shodanKey !== '****') payload.shodan_api_key = shodanKey;
   
   const res = await API.post('/api/settings', payload);
   btn.disabled = false;

@@ -10,7 +10,8 @@ SETTINGS_FILE = os.path.join(SETTINGS_DIR, "settings.json")
 DEFAULT_SETTINGS = {
     "hibp_api_key": "",
     "proxy_url": "",
-    "ghunt_cookies": ""
+    "ghunt_cookies": "",
+    "shodan_api_key": ""
 }
 
 def load_settings() -> dict:
@@ -33,6 +34,8 @@ def load_settings() -> dict:
         settings["hibp_api_key"] = os.getenv("HIBP_API_KEY", "")
     if not settings["proxy_url"]:
         settings["proxy_url"] = os.getenv("PROXY_URL", "")
+    if not settings["shodan_api_key"]:
+        settings["shodan_api_key"] = os.getenv("SHODAN_API_KEY", "")
 
     # For GHunt cookies, check the cookies path
     if not settings["ghunt_cookies"]:
@@ -52,10 +55,11 @@ def save_settings(new_settings: dict):
     try:
         os.makedirs(SETTINGS_DIR, exist_ok=True)
         
-        # We only save HIBP key and Proxy URL in settings.json to keep it clean
+        # We save HIBP key, Proxy URL and Shodan key in settings.json to keep it clean
         to_save = {
             "hibp_api_key": new_settings.get("hibp_api_key", "").strip(),
-            "proxy_url": new_settings.get("proxy_url", "").strip()
+            "proxy_url": new_settings.get("proxy_url", "").strip(),
+            "shodan_api_key": new_settings.get("shodan_api_key", "").strip()
         }
         
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
