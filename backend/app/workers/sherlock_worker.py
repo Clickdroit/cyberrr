@@ -66,6 +66,7 @@ async def run_sherlock(
             "--output", output_file,
             "--timeout", "10",
             "--print-found",
+            "--local",
         ]
         if proxy_url:
             cmd.extend(["--proxy", proxy_url])
