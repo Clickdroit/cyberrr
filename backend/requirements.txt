@@ -16,7 +16,14 @@ itsdangerous==2.2.0
 lxml==4.9.1
 phonenumbers==8.13.46
 # OSINT Tools
-maigret==0.4.4
+pycountry
+socid-extractor
+jinja2
+mistletoe
+aiohttp==3.8.1
+aiohttp-socks==0.7.1
+aiodns==3.0.0
+arabic-reshaper==2.1.4
 sherlock-project==0.14.3
 holehe==1.61
 # NLP / Extraction
