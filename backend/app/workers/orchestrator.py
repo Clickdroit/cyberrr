@@ -174,45 +174,54 @@ def _run_username_scan(scan_id: str, username: str, aggregator: DataAggregator) 
     from app.workers.scraper_worker import run_scraper
 
     results = {}
-    callback = _make_progress_callback(scan_id, "maigret")
-
-    # 1. Maigret — deep metadata extraction
-    maigret_results = _run_async(
-        run_maigret(
-            username=username,
-            scan_id=scan_id,
-            progress_callback=_async_wrap(callback),
-        )
-    )
-    results["maigret"] = maigret_results
-    aggregator.ingest_tool_results("maigret", maigret_results)
-
-    # 2. Sherlock — broad fast sweep, deduplicated
-    maigret_urls = {acc["url"] for acc in maigret_results.get("accounts", [])}
+    # 1. Prepare async tasks
+    maigret_callback = _make_progress_callback(scan_id, "maigret")
     sherlock_callback = _make_progress_callback(scan_id, "sherlock")
-    sherlock_results = _run_async(
-        run_sherlock(
-            username=username,
-            scan_id=scan_id,
-            existing_urls=maigret_urls,
-            progress_callback=_async_wrap(sherlock_callback),
-            proxy_url=PROXY_URL,
-        )
-    )
-    results["sherlock"] = sherlock_results
-    aggregator.ingest_tool_results("sherlock", sherlock_results)
-
-    # 3. WhatsMyName — concurrent swift check
     wmn_callback = _make_progress_callback(scan_id, "whatsmyname")
-    whatsmyname_results = _run_async(
-        run_whatsmyname(
-            username=username,
-            scan_id=scan_id,
-            progress_callback=_async_wrap(wmn_callback),
-            proxy_url=PROXY_URL,
-        )
+
+    maigret_task = run_maigret(
+        username=username,
+        scan_id=scan_id,
+        progress_callback=_async_wrap(maigret_callback),
     )
+    sherlock_task = run_sherlock(
+        username=username,
+        scan_id=scan_id,
+        existing_urls=None,
+        progress_callback=_async_wrap(sherlock_callback),
+        proxy_url=PROXY_URL,
+    )
+    wmn_task = run_whatsmyname(
+        username=username,
+        scan_id=scan_id,
+        progress_callback=_async_wrap(wmn_callback),
+        proxy_url=PROXY_URL,
+    )
+
+    # 2. Run concurrently and await all
+    async def run_concurrently():
+        return await asyncio.gather(maigret_task, sherlock_task, wmn_task, return_exceptions=True)
+
+    outputs = _run_async(run_concurrently())
+
+    # 3. Process outputs with fallback for exceptions
+    def get_result(out):
+        if isinstance(out, Exception):
+            logger.error(f"OSINT worker task failed: {out}", exc_info=out)
+            return {"accounts": [], "metadata": {}, "emails": [], "sites_found": 0, "sites_checked": 0, "error": str(out)}
+        return out if out else {"accounts": [], "metadata": {}, "emails": [], "sites_found": 0, "sites_checked": 0}
+
+    maigret_results = get_result(outputs[0])
+    sherlock_results = get_result(outputs[1])
+    whatsmyname_results = get_result(outputs[2])
+
+    results["maigret"] = maigret_results
+    results["sherlock"] = sherlock_results
     results["whatsmyname"] = whatsmyname_results
+
+    # Ingest in aggregator (which handles deduplication automatically)
+    aggregator.ingest_tool_results("maigret", maigret_results)
+    aggregator.ingest_tool_results("sherlock", sherlock_results)
     aggregator.ingest_tool_results("whatsmyname", whatsmyname_results)
 
     # 4. Scraper — enrich top profile pages
@@ -266,41 +275,51 @@ def _run_email_scan(scan_id: str, email: str, aggregator: DataAggregator) -> Dic
 
     results = {}
     
-    # 1. Holehe — check 120+ services
+    # 1. Prepare async tasks
     holehe_callback = _make_progress_callback(scan_id, "holehe")
-    holehe_results = _run_async(
-        run_holehe(
-            email=email,
-            scan_id=scan_id,
-            progress_callback=_async_wrap(holehe_callback),
-        )
-    )
-    results["holehe"] = holehe_results
-    aggregator.ingest_tool_results("holehe", holehe_results)
-
-    # 2. GHunt — Google-specific intelligence
     ghunt_callback = _make_progress_callback(scan_id, "ghunt")
-    ghunt_results = _run_async(
-        run_ghunt(
-            email=email,
-            scan_id=scan_id,
-            progress_callback=_async_wrap(ghunt_callback),
-        )
-    )
-    results["ghunt"] = ghunt_results
-    aggregator.ingest_tool_results("ghunt", ghunt_results)
-
-    # 3. HaveIBeenPwned — check data leaks
     hibp_callback = _make_progress_callback(scan_id, "hibp")
-    hibp_results = _run_async(
-        run_hibp(
-            email=email,
-            scan_id=scan_id,
-            progress_callback=_async_wrap(hibp_callback),
-            proxy_url=PROXY_URL,
-        )
+
+    holehe_task = run_holehe(
+        email=email,
+        scan_id=scan_id,
+        progress_callback=_async_wrap(holehe_callback),
     )
+    ghunt_task = run_ghunt(
+        email=email,
+        scan_id=scan_id,
+        progress_callback=_async_wrap(ghunt_callback),
+    )
+    hibp_task = run_hibp(
+        email=email,
+        scan_id=scan_id,
+        progress_callback=_async_wrap(hibp_callback),
+        proxy_url=PROXY_URL,
+    )
+
+    # 2. Run concurrently and await all
+    async def run_concurrently():
+        return await asyncio.gather(holehe_task, ghunt_task, hibp_task, return_exceptions=True)
+
+    outputs = _run_async(run_concurrently())
+
+    # 3. Process outputs with fallback for exceptions
+    def get_result(out):
+        if isinstance(out, Exception):
+            logger.error(f"OSINT worker task failed: {out}", exc_info=out)
+            return {"accounts": [], "metadata": {}, "emails": [], "sites_found": 0, "sites_checked": 0, "error": str(out)}
+        return out if out else {"accounts": [], "metadata": {}, "emails": [], "sites_found": 0, "sites_checked": 0}
+
+    holehe_results = get_result(outputs[0])
+    ghunt_results = get_result(outputs[1])
+    hibp_results = get_result(outputs[2])
+
+    results["holehe"] = holehe_results
+    results["ghunt"] = ghunt_results
     results["hibp"] = hibp_results
+
+    aggregator.ingest_tool_results("holehe", holehe_results)
+    aggregator.ingest_tool_results("ghunt", ghunt_results)
     aggregator.ingest_tool_results("hibp", hibp_results)
 
     # 4. Scraper on found account URLs
