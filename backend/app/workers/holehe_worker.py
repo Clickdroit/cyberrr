@@ -8,6 +8,7 @@ import importlib
 import logging
 import pkgutil
 from typing import Any, Dict, List
+from app.utils.scan_logger import log_scan_message
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,7 @@ async def run_holehe(
                             if item.get("exists") and not item.get("rateLimit"):
                                 found_count += 1
                                 site_name = item.get("name", "Unknown")
+                                log_scan_message(scan_id, f"🔑 Holehe: [+] {site_name} (inscription détectée)")
                                 registered_sites.append({
                                     "site_name": site_name,
                                     "url": _get_site_url(site_name),

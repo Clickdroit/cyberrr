@@ -7,6 +7,7 @@ import logging
 import os
 import httpx
 from typing import Dict, Callable, Optional
+from app.utils.scan_logger import log_scan_message
 
 logger = logging.getLogger(__name__)
 
@@ -46,21 +47,26 @@ async def run_hibp(
                 if resp.status_code == 200:
                     raw_breaches = resp.json()
                     for b in raw_breaches:
+                        b_name = b.get("Name", "Unknown")
+                        b_date = b.get("BreachDate", "Unknown")
+                        log_scan_message(scan_id, f"🔓 HIBP: [+] Fuite détectée dans {b_name} ({b_date})")
                         breaches.append({
-                            "name": b.get("Name", "Unknown"),
+                            "name": b_name,
                             "domain": b.get("Domain", ""),
-                            "date": b.get("BreachDate", "Unknown"),
+                            "date": b_date,
                             "count": b.get("PwnCount", 0),
                             "details": b.get("Description", ""),
                             "data_classes": b.get("DataClasses", [])
                         })
                     logger.info(f"HIBP: found {len(breaches)} breaches for {email}")
                 elif resp.status_code == 404:
+                    log_scan_message(scan_id, "🔓 HIBP: Aucune fuite détectée via l'API officielle.")
                     logger.info(f"HIBP: no breaches found for {email}")
                 else:
                     logger.warning(f"HIBP returned status code {resp.status_code}")
                     api_configured = False  # Fallback to simulation due to API error
         except Exception as e:
+            log_scan_message(scan_id, f"⚠️ HIBP: Erreur lors de la requête API ({e})")
             logger.error(f"Error querying HaveIBeenPwned API: {e}")
             api_configured = False
 
@@ -114,6 +120,10 @@ async def run_hibp(
                 breaches = [all_sims[idx1]]
             else:
                 breaches = [all_sims[idx1], all_sims[idx2]]
+            
+            log_scan_message(scan_id, "🔓 HIBP (Simulé): Pas de clé API configurée. Détection simulée de brèches.")
+            for b in breaches:
+                log_scan_message(scan_id, f"🔓 HIBP (Simulé): [+] Fuite détectée dans {b['name']} ({b['date']})")
         else:
             breaches = []
 

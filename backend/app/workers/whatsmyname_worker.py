@@ -9,6 +9,7 @@ import json
 import logging
 import httpx
 from typing import Dict, List, Callable, Optional
+from app.utils.scan_logger import log_scan_message
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +166,7 @@ async def run_whatsmyname(
         total_sites = len(scan_list)
         
         checked = 0
-        found_accounts = []
+        found_list = []
         
         # Set up concurrency limits
         semaphore = asyncio.Semaphore(15)
@@ -175,21 +176,24 @@ async def run_whatsmyname(
             async with semaphore:
                 res = await check_site(client, site, username, proxy_url)
                 checked += 1
+                if res:
+                    found_list.append(res)
+                    log_scan_message(scan_id, f"🔍 WhatsMyName: [+] {res['site_name']}: {res['url']}")
                 
                 # Progress updates (throttle to avoid overloading pubsub)
                 if progress_callback and (checked % 5 == 0 or checked == total_sites):
                     await progress_callback(
                         "whatsmyname",
                         "running",
-                        len(found_accounts),
+                        len(found_list),
                         total_sites
                     )
                 return res
 
         tasks = [worker(s) for s in scan_list]
         
-        results = await asyncio.gather(*tasks)
-        found_accounts = [r for r in results if r is not None]
+        await asyncio.gather(*tasks)
+        found_accounts = found_list
 
         logger.info(f"WhatsMyName completed: {len(found_accounts)} accounts found")
         

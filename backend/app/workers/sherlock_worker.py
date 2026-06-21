@@ -67,6 +67,7 @@ async def run_sherlock(
             "--timeout", "10",
             "--print-found",
             "--local",
+            "--no-color",
         ]
         if proxy_url:
             cmd.extend(["--proxy", proxy_url])
@@ -80,18 +81,22 @@ async def run_sherlock(
             stderr=asyncio.subprocess.PIPE,
         )
 
-
+        ansi_escape = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
         found_count = 0
         stdout_lines = []
         # Stream stdout to track progress in real time
         async for line in proc.stdout:
             decoded = line.decode("utf-8", errors="replace").strip()
             if decoded:
-                stdout_lines.append(decoded)
-            if "[+]" in decoded:
-                found_count += 1
-                if found_count % 20 == 0 and progress_callback:
-                    await progress_callback("sherlock", "running", found_count, 400)
+                # Remove ANSI colors/styling to ensure correct matches
+                clean_line = ansi_escape.sub('', decoded).strip()
+                stdout_lines.append(clean_line)
+                if "[+]" in clean_line or "ERROR" in clean_line or "WARNING" in clean_line:
+                    log_scan_message(scan_id, f"🕵️ Sherlock: {clean_line}")
+                if "[+]" in clean_line:
+                    found_count += 1
+                    if found_count % 20 == 0 and progress_callback:
+                        await progress_callback("sherlock", "running", found_count, 400)
 
         await proc.wait()
         if proc.returncode != 0:
@@ -104,6 +109,8 @@ async def run_sherlock(
             
             logger.error(f"Sherlock exited with code {proc.returncode}. Details: {error_details}")
             log_scan_message(scan_id, f"⚠️ Sherlock erreur (code {proc.returncode}) : {error_details[:300]}")
+        else:
+            log_scan_message(scan_id, f"🕵️ Sherlock terminé avec succès. {found_count} comptes trouvés.")
 
         # Parse CSV output file
         if os.path.exists(output_file):

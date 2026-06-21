@@ -68,6 +68,7 @@ async def run_maigret(
             if status and hasattr(status, "is_found") and status.is_found():
                 found_count += 1
                 url = result.get("url_user", "")
+                log_scan_message(scan_id, f"🔭 Maigret: [+] {site_name}: {url}")
 
                 # Extract profile metadata if available
                 tags = result.get("tags", []) or []

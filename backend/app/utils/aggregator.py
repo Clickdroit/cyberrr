@@ -233,13 +233,39 @@ class DataAggregator:
 
         # Extract from name field
         if name:
-            parts = name.strip().split()
-            if len(parts) >= 1:
-                fn = parts[0].lower()
-                if fn in COMMON_FIRSTNAMES:
-                    self.firstname_counter[parts[0].title()] += 2  # Higher weight
-            if len(parts) >= 2:
-                self.lastname_counter[parts[-1].title()] += 1
+            # Clean typical site suffixes/brackets
+            clean_name = re.sub(r"\s*·\s*GitHub\s*$", "", name, flags=re.I)
+            clean_name = re.sub(r"\s*-\s*YouTube\s*$", "", clean_name, flags=re.I)
+            clean_name = re.sub(r"\s*/\s*X\s*$", "", clean_name, flags=re.I)
+
+            # Heuristic: check if there is a real name in parentheses, e.g. Clickdroit (Maxime)
+            paren_match = re.search(r"\(([^)]+)\)", clean_name)
+            if paren_match:
+                real_name_part = paren_match.group(1).strip()
+                if not real_name_part.startswith("@"):
+                    real_name_tokens = re.findall(r"\b[a-zA-Zàâäéèêëïîôùûüÿœæç]+\b", real_name_part)
+                    if real_name_tokens:
+                        fn = real_name_tokens[0].title()
+                        # Only accept if it is a common first name, or if it doesn't look like a username/website
+                        if fn.lower() in COMMON_FIRSTNAMES:
+                            self.firstname_counter[fn] += 2
+                            if len(real_name_tokens) >= 2:
+                                ln = real_name_tokens[-1].title()
+                                if ln.lower() not in {"github", "youtube", "twitter", "instagram", "facebook", "linkedin", "x", "com"}:
+                                    self.lastname_counter[ln] += 1
+            
+            # Process the whole clean_name for known first names
+            tokens = re.findall(r"\b[a-zA-Zàâäéèêëïîôùûüÿœæç]+\b", clean_name)
+            for token in tokens:
+                token_lower = token.lower()
+                if token_lower in COMMON_FIRSTNAMES:
+                    self.firstname_counter[token.title()] += 2
+            
+            # Fallback for last name: last word if we have at least 2 words
+            if tokens and len(tokens) >= 2:
+                last_token = tokens[-1].title()
+                if last_token.lower() not in COMMON_FIRSTNAMES and last_token.lower() not in {"github", "youtube", "twitter", "instagram", "facebook", "linkedin", "x", "com"}:
+                    self.lastname_counter[last_token] += 1
 
         # Extract from location field
         if location:

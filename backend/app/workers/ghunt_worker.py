@@ -8,6 +8,7 @@ import json
 import logging
 import os
 from typing import Any, Dict
+from app.utils.scan_logger import log_scan_message
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +34,13 @@ async def run_ghunt(
     if not _ghunt_available():
         if progress_callback:
             await progress_callback("ghunt", "skipped", 0, 0)
+        log_scan_message(scan_id, "🌐 GHunt: Non configuré ou cookies absents.")
         return _empty_result("GHunt not configured (cookies required — see README)")
 
     if progress_callback:
         await progress_callback("ghunt", "running", 0, 1)
+    
+    log_scan_message(scan_id, f"🌐 GHunt: Recherche d'informations sur l'adresse email {email}...")
 
     try:
         # GHunt v2 uses its own async API
@@ -61,6 +65,7 @@ async def run_ghunt(
         if proc.returncode != 0:
             error_msg = stderr.decode("utf-8", errors="replace").strip()
             logger.warning(f"GHunt exited with code {proc.returncode}: {error_msg}")
+            log_scan_message(scan_id, f"⚠️ GHunt erreur (code {proc.returncode}) : {error_msg[:300]}")
             if progress_callback:
                 await progress_callback("ghunt", "failed", 0, 1)
             return _empty_result(f"GHunt error: {error_msg[:200]}")
@@ -77,6 +82,15 @@ async def run_ghunt(
 
         # Extract structured data
         google_data = _parse_ghunt_output(result)
+
+        meta = google_data.get("metadata", {})
+        info_strs = []
+        if meta.get("name"): info_strs.append(f"Nom: {meta['name']}")
+        if meta.get("location"): info_strs.append(f"Ville: {meta['location']}")
+        if google_data.get("accounts"): info_strs.append("YouTube: Oui")
+        
+        info_detail = ", ".join(info_strs) if info_strs else "Aucune info publique trouvée"
+        log_scan_message(scan_id, f"🌐 GHunt: [+] Analyse terminée. ({info_detail})")
 
         if progress_callback:
             await progress_callback("ghunt", "completed", 1, 1)
