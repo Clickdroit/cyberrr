@@ -34,3 +34,17 @@ fake-useragent==1.5.1
 python-dotenv==1.0.1
 anyio==4.6.2
 trio==0.26.2
+
+# Maigret dependencies (manual install to avoid typing-extensions conflict)
+async-timeout>=4.0.2
+chardet>=5.0.0
+colorama>=0.4.5
+future>=0.18.2
+future-annotations>=1.0.0
+html5lib>=1.1
+multidict>=6.0.2
+PyPDF2>=2.10.4
+PySocks>=1.7.1
+python-bidi>=0.4.2
+requests>=2.28.1
+requests-futures>=1.0.0
