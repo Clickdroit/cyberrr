@@ -1,0 +1,50 @@
+# Ignorer les fichiers sensibles et générés
+.env
+*.env
+config/ghunt_cookies.json
+config/*.json
+
+# Base de données et données persistantes
+data/
+*.db
+*.sqlite
+
+# Rapports OSINT temporaires
+reports/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+
+# Node (si jamais utilisé)
+node_modules/
+.npm
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker overrides locaux
+docker-compose.override.yml

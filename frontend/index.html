@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OSINT Hub — Investigation Platform</title>
+  <meta name="description" content="Hub d'investigation OSINT automatisé — Maigret, Sherlock, Holehe, GHunt" />
+
+  <!-- Tailwind CSS v3 CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            cyan: { 400: '#00d4ff', 500: '#00b8d9' },
+            purple: { 600: '#7c3aed', 700: '#5b21b6' },
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+
+<!-- Animated Background -->
+<div class="bg-grid" aria-hidden="true"></div>
+<div class="bg-glow-top" aria-hidden="true"></div>
+
+<!-- ═══════════════════════════════════════
+     LOGIN PAGE
+═══════════════════════════════════════ -->
+<div id="login-page" class="hidden">
+  <div class="login-card glass-card glass-card-glow">
+    <!-- Logo -->
+    <div class="login-logo">🔭</div>
+
+    <!-- Title -->
+    <div class="text-center mb-8">
+      <h1 class="text-2xl font-bold gradient-text mb-1">OSINT Hub</h1>
+      <p class="text-secondary text-sm">Plateforme d'Investigation Automatisée</p>
+    </div>
+
+    <!-- Login Form -->
+    <form id="login-form" autocomplete="off">
+      <div class="mb-4 relative">
+        <label class="text-xs uppercase tracking-widest text-secondary block mb-2">
+          Mot de passe d'accès
+        </label>
+        <div class="relative">
+          <input
+            id="password-input"
+            type="password"
+            class="form-input pr-12"
+            placeholder="••••••••••••"
+            autocomplete="current-password"
+            required
+          />
+          <button
+            type="button"
+            id="toggle-password"
+            class="absolute right-3 top-1/2 -translate-y-1/2 text-secondary hover:text-primary transition-colors text-lg"
+            aria-label="Afficher/masquer le mot de passe"
+          >👁</button>
+        </div>
+      </div>
+
+      <button id="login-btn" type="submit" class="btn-primary w-full justify-center mt-2">
+        Accéder au Hub
+      </button>
+    </form>
+
+    <!-- Footer -->
+    <p class="text-center text-dim text-xs mt-8">
+      Usage légal uniquement · RGPD compliant
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     MAIN APPLICATION
+═══════════════════════════════════════ -->
+<div id="app" class="hidden min-h-screen flex flex-col" style="position: relative; z-index: 10;">
+
+  <!-- Top Navigation -->
+  <header class="sticky top-0 z-50 border-b" style="background: rgba(8,11,20,0.9); backdrop-filter: blur(20px); border-color: var(--border-subtle);">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+      <!-- Brand -->
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-purple-600 flex items-center justify-center text-sm font-bold">🔭</div>
+        <span class="font-bold text-sm gradient-text tracking-wide">OSINT HUB</span>
+      </div>
+
+      <!-- Nav Items -->
+      <nav class="flex items-center gap-1">
+        <button data-nav="home" class="tab-btn active text-xs" aria-label="Accueil">
+          🏠 <span class="hidden sm:inline">Accueil</span>
+        </button>
+        <button data-nav="history" class="tab-btn text-xs" aria-label="Historique">
+          📋 <span class="hidden sm:inline">Historique</span>
+        </button>
+        <button id="logout-btn" class="btn-secondary text-xs py-1.5 px-3 ml-2">
+          Déconnexion
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ── HOME VIEW ────────────────────────────────── -->
+  <main id="view-home" class="flex-1 flex flex-col items-center justify-center px-4 py-12">
+    <!-- Hero -->
+    <div class="text-center mb-10 max-w-2xl">
+      <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-medium mb-6"
+           style="background: rgba(0,212,255,0.08); border: 1px solid rgba(0,212,255,0.2); color: var(--accent-cyan);">
+        <span class="status-dot running"></span>
+        Maigret · Sherlock · Holehe · GHunt · Web Scraper
+      </div>
+      <h1 class="text-4xl sm:text-5xl font-extrabold gradient-text mb-4 leading-tight">
+        Investiguer. Corréler.<br/>Comprendre.
+      </h1>
+      <p class="text-secondary text-lg">
+        Saisir un pseudonyme, un email ou un numéro de téléphone.<br/>
+        Le Hub orchestre automatiquement tous les outils OSINT.
+      </p>
+    </div>
+
+    <!-- Search Bar -->
+    <form id="search-form" class="search-container mb-6" role="search">
+      <input
+        id="search-input"
+        type="text"
+        class="search-input"
+        placeholder="Pseudo, email ou téléphone..."
+        aria-label="Cible à investiguer"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button type="submit" class="search-btn" aria-label="Lancer l'investigation">
+        ⟳
+      </button>
+    </form>
+
+    <!-- Type selector -->
+    <div class="flex flex-wrap gap-2 justify-center mb-3">
+      <button data-type="auto" class="type-badge active">⚡ Auto-detect</button>
+      <button data-type="username" class="type-badge">👤 Pseudo</button>
+      <button data-type="email" class="type-badge">✉️ Email</button>
+      <button data-type="phone" class="type-badge">📞 Téléphone</button>
+    </div>
+    <div id="detected-type" class="hidden text-xs text-secondary mt-1 text-center"></div>
+
+    <!-- Features grid -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-3xl w-full mt-12">
+      <div class="glass-card p-4 text-center">
+        <div class="text-2xl mb-2">🔭</div>
+        <div class="text-xs font-semibold">Maigret</div>
+        <div class="text-xs text-dim mt-1">3000+ sites</div>
+      </div>
+      <div class="glass-card p-4 text-center">
+        <div class="text-2xl mb-2">🕵️</div>
+        <div class="text-xs font-semibold">Sherlock</div>
+        <div class="text-xs text-dim mt-1">400+ sites</div>
+      </div>
+      <div class="glass-card p-4 text-center">
+        <div class="text-2xl mb-2">🔑</div>
+        <div class="text-xs font-semibold">Holehe</div>
+        <div class="text-xs text-dim mt-1">120+ services</div>
+      </div>
+      <div class="glass-card p-4 text-center">
+        <div class="text-2xl mb-2">🧠</div>
+        <div class="text-xs font-semibold">Corrélation</div>
+        <div class="text-xs text-dim mt-1">IA d'agrégation</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ── SCANNING VIEW ─────────────────────────────── -->
+  <main id="view-scanning" class="hidden flex-1 max-w-4xl w-full mx-auto px-4 py-8">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <div class="text-xs uppercase tracking-widest text-secondary mb-1">Investigation en cours</div>
+        <h2 class="text-2xl font-bold">
+          <span class="font-mono text-cyan" id="scanning-target">...</span>
+          <span class="text-secondary text-base ml-2 font-normal" id="scanning-type"></span>
+        </h2>
+      </div>
+      <div class="flex items-center gap-2 text-cyan text-sm">
+        <span class="status-dot running"></span>
+        <span class="blink">En cours...</span>
+      </div>
+    </div>
+
+    <!-- Tool Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6" id="tool-cards">
+      <!-- Injected by JS -->
+    </div>
+
+    <!-- Terminal Log -->
+    <div class="glass-card p-4">
+      <div class="text-xs uppercase tracking-widest text-secondary mb-3 flex items-center gap-2">
+        <span class="status-dot running"></span>
+        Journal en temps réel
+      </div>
+      <div id="scan-log" class="terminal-log">
+        <div class="log-line info">[Système] Initialisation des outils OSINT...</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ── RESULTS VIEW ──────────────────────────────── -->
+  <main id="view-results" class="hidden flex-1 max-w-5xl w-full mx-auto px-4 py-8">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6 flex-wrap gap-4">
+      <div>
+        <div class="text-xs uppercase tracking-widest text-secondary mb-1">Rapport d'investigation</div>
+        <h2 class="text-2xl font-bold font-mono text-cyan" id="results-target">—</h2>
+        <div class="text-sm text-secondary mt-1" id="results-total"></div>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="showView('home'); document.getElementById('search-input').value=''" 
+                class="btn-secondary text-sm">
+          ← Nouvelle recherche
+        </button>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="glass-card mb-6">
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="profile">
+          🧠 Profil Type
+        </button>
+        <button class="tab-btn" data-tab="accounts">
+          🗺️ Cartographie
+        </button>
+        <button class="tab-btn" data-tab="pivot">
+          🔄 Pivot
+        </button>
+      </div>
+
+      <!-- Tab Contents -->
+      <div class="p-5">
+        <div id="tab-profile" class="tab-content">
+          <div class="text-center py-8 text-secondary">Chargement...</div>
+        </div>
+        <div id="tab-accounts" class="tab-content hidden">
+          <div class="text-center py-8 text-secondary">Chargement...</div>
+        </div>
+        <div id="tab-pivot" class="tab-content hidden">
+          <div class="text-center py-8 text-secondary">Chargement...</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ── HISTORY VIEW ──────────────────────────────── -->
+  <main id="view-history" class="hidden flex-1 max-w-3xl w-full mx-auto px-4 py-8">
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h2 class="text-xl font-bold">Historique des investigations</h2>
+        <p class="text-secondary text-sm mt-1">Vos 20 dernières recherches</p>
+      </div>
+      <button onclick="loadHistory()" class="btn-secondary text-sm">↻ Actualiser</button>
+    </div>
+    <div id="history-list" class="flex flex-col gap-3">
+      <div class="text-center py-8 text-secondary">Chargement...</div>
+    </div>
+  </main>
+
+</div><!-- /app -->
+
+<!-- Toast Container -->
+<div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+<!-- Scripts -->
+<script src="/js/websocket.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>
